@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vitai-lens</title>
+<style>
+  /* Palette roles - validated with the six-check palette validator:
+     light categorical [#0d9488,#c2620e] PASS; dark [#0f9d91,#cd7a1e] PASS.
+     Chrome/ink tokens follow the reference dataviz instance. */
+  :root, .viz-root {
+    color-scheme: light;
+    --page:      #f9f9f7;  --surface-1: #fcfcfb;
+    --ink-1:     #0b0b0b;  --ink-2:     #52514e;  --ink-mut: #898781;
+    --grid:      #e1e0d9;  --baseline:  #c3c2b7;
+    --border:    rgba(11,11,11,0.10);
+    --series-1:  #0d9488;  --series-2:  #c2620e;
+    --good:      #0ca30c;  --serious:   #ec835a;  --info: #2a78d6;
+    --delta-good:#006300;
+    --seq-1:#d9f1ef; --seq-2:#a8ddd8; --seq-3:#74c5bd;
+    --seq-4:#45a89e; --seq-5:#1f8a80; --seq-6:#0b6b62;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])), :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page:      #0d0d0d;  --surface-1: #1a1a19;
+      --ink-1:     #ffffff;  --ink-2:     #c3c2b7;  --ink-mut: #898781;
+      --grid:      #2c2c2a;  --baseline:  #383835;
+      --border:    rgba(255,255,255,0.10);
+      --series-1:  #0f9d91;  --series-2:  #cd7a1e;
+      --good:      #0ca30c;  --serious:   #ec835a;  --info: #3987e5;
+      --delta-good:#0ca30c;
+      --seq-1:#153432; --seq-2:#1c4b47; --seq-3:#23635c;
+      --seq-4:#2a7c72; --seq-5:#31948a; --seq-6:#3aaea1;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink-1);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+  }
+  header img { width: 30px; height: 30px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--ink-2); font-size: 13px; }
+  header .spacer { flex: 1; }
+  .btn {
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--ink-1); border-radius: 8px; padding: 7px 12px;
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink-mut); }
+  main { max-width: 1060px; margin: 0 auto; padding: 18px 20px 60px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 12px; margin-bottom: 16px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .tile .k { color: var(--ink-2); font-size: 12px; margin-bottom: 2px; }
+  .tile .v { font-size: 24px; font-weight: 650; }
+  .tile .d { font-size: 12px; color: var(--ink-2); }
+  .tile .d.up { color: var(--delta-good); }
+  .cards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px 10px; overflow-x: auto;
+  }
+  .card h2 { font-size: 14px; font-weight: 650; margin: 0 0 2px; }
+  .card .hint { color: var(--ink-mut); font-size: 12px; margin: 0 0 8px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2);
+            margin: 4px 0 2px; flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 10px; height: 10px;
+                border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  svg text { font: 11px system-ui, sans-serif; fill: var(--ink-mut); }
+  svg .val { fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    white-space: nowrap;
+  }
+  .tooltip .t { color: var(--ink-2); }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  table { border-collapse: collapse; font-size: 13px; margin-top: 8px;
+          font-variant-numeric: tabular-nums; }
+  th, td { padding: 4px 10px; border-bottom: 1px solid var(--grid); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-2); font-weight: 600; }
+  #dropnote { color: var(--ink-mut); font-size: 13px; padding: 30px 0; }
+</style>
+</head>
+<body class="viz-root">
+<header>
+  <img src="assets/vitai-mark.svg" alt="">
+  <h1>vitai-lens</h1>
+  <span class="sub" id="source-note">demo athlete (synthetic)</span>
+  <span class="spacer"></span>
+  <label class="btn">Open your health.db
+    <input id="file" type="file" accept=".db,.sqlite" hidden>
+  </label>
+</header>
+<main>
+  <div id="dropnote" hidden>Loading the demo database... (if this page was opened
+    as a local file, use the button above to open <code>demo/health.db</code> or
+    your own <code>derived/health.db</code>)</div>
+  <div class="tiles" id="tiles"></div>
+  <div class="cards">
+    <div class="card"><h2>Weight</h2>
+      <p class="hint">7-day rolling average (line) over raw weigh-ins (dots)</p>
+      <div id="c-weight"></div></div>
+    <div class="card"><h2>Weekly running distance</h2>
+      <p class="hint">km per ISO week, runs and tests</p>
+      <div id="c-km"></div></div>
+    <div class="card"><h2>Sessions per week</h2>
+      <div class="legend"><span><span class="sw" style="background:var(--series-1)"></span>runs</span>
+        <span><span class="sw" style="background:var(--series-2)"></span>gym</span></div>
+      <div id="c-sess"></div></div>
+    <div class="card"><h2>Daily steps</h2>
+      <p class="hint">calendar heatmap, last 12 weeks - darker teal = more steps</p>
+      <div id="c-heat"></div></div>
+    <div class="card"><h2>Goal-attainment verdicts</h2>
+      <p class="hint">weekly engine verdicts per metric: = on target &middot; - behind
+        &middot; + ahead &middot; &centerdot; no data</p>
+      <div id="c-verd"></div></div>
+  </div>
+  <details><summary>Table view (last 30 daily rows)</summary>
+    <div id="tableview" style="overflow-x:auto"></div></details>
+</main>
+<div class="tooltip" id="tip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
+const tip = $("#tip");
+function showTip(html, x, y) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const pad = 12, w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(x + pad, innerWidth - w - 8) + "px";
+  tip.style.top = (y - h - pad > 8 ? y - h - pad : y + pad) + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+function rows(db, sql) {
+  const res = db.exec(sql);
+  if (!res.length) return [];
+  const { columns, values } = res[0];
+  return values.map(v => Object.fromEntries(columns.map((c, i) => [c, v[i]])));
+}
+const fmt = (n, d = 1) => n == null ? "-" : Number(n).toFixed(d);
+const week = (ds) => { // ISO-week Monday of a date string
+  const d = new Date(ds + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+};
+
+/* ---------- tiny SVG chart helpers (marks per the dataviz specs) ---------- */
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function frame(mount, W, H) {
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%",
+                             style: `max-width:${W}px;display:block` });
+  mount.replaceChildren(svg);
+  return svg;
+}
+function gridY(svg, ticks, x0, x1, y, fmtv) {
+  for (const t of ticks) {
+    svg.append(svgEl("line", { x1: x0, x2: x1, y1: y(t), y2: y(t),
+      stroke: css("--grid"), "stroke-width": 1 }));
+    const lbl = svgEl("text", { x: x0 - 6, y: y(t) + 4, "text-anchor": "end" });
+    lbl.textContent = fmtv(t); svg.append(lbl);
+  }
+}
+function niceTicks(min, max, n = 4) {
+  const span = (max - min) || 1, step = Math.pow(10, Math.floor(Math.log10(span / n)));
+  const s = [1, 2, 5, 10].map(m => m * step).find(m => span / m <= n + 1) || step * 10;
+  const t = []; for (let v = Math.ceil(min / s) * s; v <= max + 1e-9; v += s) t.push(+v.toFixed(6));
+  return t;
+}
+
+/* ------------------------------ weight chart ----------------------------- */
+function weightChart(db) {
+  const w = rows(db, "SELECT date, kg FROM weight WHERE kg IS NOT NULL ORDER BY date");
+  if (!w.length) return;
+  const roll = w.map((r, i) => {
+    const win = w.slice(Math.max(0, i - 6), i + 1).map(x => x.kg);
+    return { date: r.date, kg: r.kg, avg: win.reduce((a, b) => a + b) / win.length };
+  });
+  const W = 980, H = 240, L = 46, R = 60, T = 14, B = 26;
+  const xs = roll.map(r => r.date);
+  const x = (d) => L + (xs.indexOf(d) / Math.max(1, xs.length - 1)) * (W - L - R);
+  const vals = roll.flatMap(r => [r.kg, r.avg]);
+  const lo = Math.min(...vals) - 0.3, hi = Math.max(...vals) + 0.3;
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const svg = frame($("#c-weight"), W, H);
+  gridY(svg, niceTicks(lo, hi, 4), L, W - R, y, v => fmt(v, 1));
+  for (const r of roll)                                   /* raw dots, muted */
+    svg.append(svgEl("circle", { cx: x(r.date), cy: y(r.kg), r: 2.5,
+      fill: css("--ink-mut"), "fill-opacity": .55 }));
+  const path = roll.map((r, i) => `${i ? "L" : "M"}${x(r.date)},${y(r.avg)}`).join("");
+  svg.append(svgEl("path", { d: path, fill: "none",
+    stroke: css("--series-1"), "stroke-width": 2, "stroke-linejoin": "round" }));
+  const last = roll[roll.length - 1];                     /* direct label */
+  const lab = svgEl("text", { x: x(last.date) + 8, y: y(last.avg) + 4, class: "val" });
+  lab.textContent = fmt(last.avg, 1) + " kg"; svg.append(lab);
+  for (const d of [xs[0], xs[Math.floor(xs.length / 2)], xs[xs.length - 1]]) {
+    const t = svgEl("text", { x: x(d), y: H - 8, "text-anchor": "middle" });
+    t.textContent = d.slice(5); svg.append(t);
+  }
+  /* crosshair + tooltip layer */
+  const cross = svgEl("line", { y1: T, y2: H - B, stroke: css("--baseline"),
+    "stroke-width": 1, visibility: "hidden" });
+  svg.append(cross);
+  const hot = svgEl("rect", { x: L, y: T, width: W - L - R, height: H - T - B,
+    fill: "transparent" });
+  hot.addEventListener("mousemove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(roll.length - 1,
+      Math.round((px - L) / (W - L - R) * (roll.length - 1))));
+    const p = roll[i];
+    cross.setAttribute("x1", x(p.date)); cross.setAttribute("x2", x(p.date));
+    cross.setAttribute("visibility", "visible");
+    showTip(`<span class="t">${p.date}</span><br>weigh-in <b>${fmt(p.kg)}</b> kg` +
+            `<br>7d avg <b>${fmt(p.avg)}</b> kg`, ev.clientX, ev.clientY);
+  });
+  hot.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  svg.append(hot);
+}
+
+/* ----------------------------- weekly bar charts ------------------------- */
+function barChart(mount, series, colorVar, unit, fmtd) {
+  const W = 980, H = 190, L = 46, R = 16, T = 12, B = 26, GAP = 2;
+  const svg = frame(mount, W, H);
+  const keys = series.map(s => s.week);
+  const max = Math.max(...series.map(s => s.total), 1);
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  gridY(svg, niceTicks(0, max, 3).filter(t => t > 0), L, W - R, y, v => fmt(v, 0));
+  const bw = (W - L - R) / keys.length;
+  series.forEach((s, i) => {
+    let y0 = H - B;                                        /* stack upward */
+    const x0 = L + i * bw + GAP, wpx = Math.max(2, bw - GAP * 2);
+    s.parts.forEach((p, pi) => {
+      if (!p.v) return;
+      const hpx = (H - T - B) * (p.v / max);
+      const isTop = s.parts.slice(pi + 1).every(q => !q.v);
+      const bar = svgEl("path", { fill: css(p.color), d: roundedTop(
+        x0, y0 - hpx + (pi ? GAP : 0), wpx, hpx - (pi ? GAP : 0), isTop ? 4 : 0) });
+      bar.addEventListener("mousemove", ev => showTip(
+        `<span class="t">week of ${s.week}</span><br>` +
+        s.parts.map(q => `${q.name} <b>${fmtd(q.v)}</b>`).join("<br>") +
+        (s.parts.length > 1 ? `<br>total <b>${fmtd(s.total)}</b> ${unit}` : ` ${unit}`),
+        ev.clientX, ev.clientY));
+      bar.addEventListener("mouseleave", hideTip);
+      svg.append(bar);
+      y0 -= hpx;
+    });
+    if (i % 2 === 0 || keys.length <= 8) {
+      const t = svgEl("text", { x: x0 + wpx / 2, y: H - 8, "text-anchor": "middle" });
+      t.textContent = s.week.slice(5); svg.append(t);
+    }
+  });
+  svg.append(svgEl("line", { x1: L, x2: W - R, y1: H - B, y2: H - B,
+    stroke: css("--baseline"), "stroke-width": 1 }));
+}
+function roundedTop(x, y, w, h, r) {
+  if (h <= 0) return "";
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + w - r},${y} ` +
+         `Q${x + w},${y} ${x + w},${y + r} L${x + w},${y + h} Z`;
+}
+function weeklyCharts(db) {
+  const runs = rows(db, "SELECT date, distance_km, type FROM sessions ORDER BY date");
+  const byWeek = new Map();
+  for (const s of runs) {
+    const wk = week(s.date);
+    if (!byWeek.has(wk)) byWeek.set(wk, { km: 0, run: 0, gym: 0 });
+    const b = byWeek.get(wk);
+    if (s.type === "run" || s.type === "test") { b.km += s.distance_km || 0; b.run++; }
+    else if (String(s.type).startsWith("gym")) b.gym++;
+  }
+  const weeks = [...byWeek.keys()].sort();
+  barChart($("#c-km"), weeks.map(wk => ({ week: wk, total: byWeek.get(wk).km,
+    parts: [{ name: "distance", v: byWeek.get(wk).km, color: "--series-1" }] })),
+    "--series-1", "km", v => fmt(v, 1));
+  barChart($("#c-sess"), weeks.map(wk => ({ week: wk,
+    total: byWeek.get(wk).run + byWeek.get(wk).gym,
+    parts: [{ name: "runs", v: byWeek.get(wk).run, color: "--series-1" },
+            { name: "gym", v: byWeek.get(wk).gym, color: "--series-2" }] })),
+    "--series-1", "sessions", v => fmt(v, 0));
+}
+
+/* ----------------------------- steps heatmap ----------------------------- */
+function heatmap(db) {
+  const d = rows(db, "SELECT date, steps FROM daily WHERE steps IS NOT NULL ORDER BY date")
+    .slice(-84);
+  if (!d.length) return;
+  const ramp = ["--seq-1", "--seq-2", "--seq-3", "--seq-4", "--seq-5", "--seq-6"];
+  const max = Math.max(...d.map(r => r.steps));
+  const CS = 20, GAP = 2, DOW = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
+  const weeks = [...new Set(d.map(r => week(r.date)))].sort();
+  const W = 40 + weeks.length * (CS + GAP) + 10, H = 30 + 7 * (CS + GAP) + 30;
+  const svg = frame($("#c-heat"), W, H);
+  DOW.forEach((t, i) => { if (!t) return;
+    const e = svgEl("text", { x: 34, y: 30 + i * (CS + GAP) + CS / 2 + 4,
+      "text-anchor": "end" }); e.textContent = t; svg.append(e); });
+  let lastMonth = "";
+  weeks.forEach((wk, wi) => {
+    const m = wk.slice(0, 7);
+    if (m !== lastMonth) { lastMonth = m;
+      const e = svgEl("text", { x: 40 + wi * (CS + GAP), y: 18 });
+      e.textContent = m.slice(5); svg.append(e); }
+  });
+  for (const r of d) {
+    const wk = week(r.date), wi = weeks.indexOf(wk);
+    const dow = (new Date(r.date + "T00:00:00Z").getUTCDay() + 6) % 7;
+    const lvl = Math.min(ramp.length - 1, Math.floor(r.steps / max * ramp.length));
+    const cell = svgEl("rect", { x: 40 + wi * (CS + GAP), y: 30 + dow * (CS + GAP),
+      width: CS, height: CS, rx: 4, fill: css(ramp[lvl]) });
+    cell.addEventListener("mousemove", ev => showTip(
+      `<span class="t">${r.date}</span><br><b>${r.steps.toLocaleString()}</b> steps`,
+      ev.clientX, ev.clientY));
+    cell.addEventListener("mouseleave", hideTip);
+    svg.append(cell);
+  }
+  /* ramp legend, below the grid */
+  ramp.forEach((c, i) => svg.append(svgEl("rect", {
+    x: 40 + i * 14, y: H - 16, width: 12, height: 8, rx: 2, fill: css(c) })));
+  const lo = svgEl("text", { x: 40 + ramp.length * 14 + 8, y: H - 8 });
+  lo.textContent = `0 - ${max.toLocaleString()} steps`; svg.append(lo);
+}
+
+/* ----------------------------- verdict strip ----------------------------- */
+const VERDICT = {
+  on_target: { c: "--good", g: "=", label: "on target" },
+  behind: { c: "--serious", g: "-", label: "behind" },
+  ahead: { c: "--info", g: "+", label: "ahead" },
+  no_data: { c: "--ink-mut", g: "·", label: "no data" },
+};
+function verdictStrip(db) {
+  const v = rows(db, "SELECT week, metric, value, target, verdict FROM verdicts ORDER BY week");
+  if (!v.length) { $("#c-verd").textContent = "no verdicts in this database"; return; }
+  const weeks = [...new Set(v.map(r => r.week))].sort().slice(-12);
+  const metrics = [...new Set(v.map(r => r.metric))];
+  const CS = 26, GAP = 3, LW = 92;
+  const W = LW + weeks.length * (CS + GAP) + 10, H = 26 + metrics.length * (CS + GAP);
+  const svg = frame($("#c-verd"), W, H);
+  metrics.forEach((m, mi) => {
+    const t = svgEl("text", { x: LW - 8, y: 26 + mi * (CS + GAP) + CS / 2 + 4,
+      "text-anchor": "end" }); t.textContent = m.replace("_", " "); svg.append(t);
+  });
+  weeks.forEach((wk, wi) => {
+    if (wi % 2 === 0) { const t = svgEl("text", {
+      x: LW + wi * (CS + GAP) + CS / 2, y: 14, "text-anchor": "middle" });
+      t.textContent = wk.slice(5); svg.append(t); }
+  });
+  for (const r of v) {
+    const wi = weeks.indexOf(r.week), mi = metrics.indexOf(r.metric);
+    if (wi < 0) continue;
+    const spec = VERDICT[r.verdict] || VERDICT.no_data;
+    const x = LW + wi * (CS + GAP), y = 26 + mi * (CS + GAP);
+    const cell = svgEl("rect", { x, y, width: CS, height: CS, rx: 5,
+      fill: css(spec.c), "fill-opacity": r.verdict === "no_data" ? .25 : .9 });
+    cell.addEventListener("mousemove", ev => showTip(
+      `<span class="t">week of ${r.week}</span><br>${r.metric.replace("_", " ")}: ` +
+      `<b>${spec.label}</b>` + (r.value != null ?
+        `<br>value ${fmt(r.value, 2)}${r.target != null ? ` / target ${fmt(r.target, 2)}` : ""}` : ""),
+      ev.clientX, ev.clientY));
+    cell.addEventListener("mouseleave", hideTip);
+    svg.append(cell);
+    const g = svgEl("text", { x: x + CS / 2, y: y + CS / 2 + 4,
+      "text-anchor": "middle", style: "fill:#fff;font-weight:700" });
+    g.textContent = spec.g; svg.append(g);
+  }
+}
+
+/* -------------------------------- tiles ---------------------------------- */
+function tiles(db) {
+  const w = rows(db, "SELECT date, kg FROM weight WHERE kg IS NOT NULL ORDER BY date");
+  const v = rows(db, "SELECT week, metric, verdict FROM verdicts");
+  const km4 = rows(db, `SELECT COALESCE(SUM(distance_km),0) AS km FROM sessions
+    WHERE type IN ('run','test') AND date >= (SELECT DATE(MAX(date), '-27 day') FROM daily)`);
+  const el = $("#tiles"); el.replaceChildren();
+  const tile = (k, val, d, up) => {
+    const t = document.createElement("div"); t.className = "tile";
+    t.innerHTML = `<div class="k">${k}</div><div class="v">${val}</div>` +
+                  (d ? `<div class="d${up ? " up" : ""}">${d}</div>` : "");
+    el.append(t);
+  };
+  if (w.length) {
+    const last7 = w.slice(-7).map(r => r.kg), prev7 = w.slice(-14, -7).map(r => r.kg);
+    const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+    tile("Weight (7d avg)", fmt(avg(last7), 1) + " kg",
+         `latest ${fmt(w[w.length - 1].kg, 1)} on ${w[w.length - 1].date}`);
+    if (prev7.length) {
+      const rate = avg(prev7) - avg(last7);
+      tile("Rate", `${rate >= 0 ? "-" : "+"}${fmt(Math.abs(rate), 2)} kg/wk`,
+           "week-over-week of 7d averages", rate > 0);
+    }
+  }
+  const wr = v.filter(r => r.metric === "weight_rate" && r.verdict !== "no_data");
+  if (wr.length) {
+    const on = wr.filter(r => r.verdict === "on_target").length;
+    tile("Rate weeks on target", `${on}/${wr.length}`,
+         "per the engine's verdicts table");
+  }
+  const dv = v.filter(r => r.verdict !== "no_data");
+  if (dv.length) {
+    const on = dv.filter(r => r.verdict === "on_target").length;
+    tile("Overall adherence", Math.round(on / dv.length * 100) + "%",
+         "all metrics, all verdict weeks");
+  }
+  if (km4.length) tile("Run km, last 4 wk", fmt(km4[0].km, 0) + " km");
+}
+
+/* -------------------------------- table ---------------------------------- */
+function tableView(db) {
+  const d = rows(db, `SELECT date, steps, kcal_in, kcal_out, sleep_h, rhr
+                      FROM daily ORDER BY date DESC LIMIT 30`);
+  const h = ["date", "steps", "kcal in", "kcal out", "sleep h", "rhr"];
+  $("#tableview").innerHTML = "<table><thead><tr>" +
+    h.map(c => `<th>${c}</th>`).join("") + "</tr></thead><tbody>" +
+    d.map(r => `<tr><td>${r.date}</td><td>${r.steps ?? "-"}</td>` +
+      `<td>${r.kcal_in ?? "-"}</td><td>${r.kcal_out ?? "-"}</td>` +
+      `<td>${r.sleep_h ?? "-"}</td><td>${r.rhr ?? "-"}</td></tr>`).join("") +
+    "</tbody></table>";
+}
+
+/* -------------------------------- boot ----------------------------------- */
+function render(db, label) {
+  $("#source-note").textContent = label;
+  $("#dropnote").hidden = true;
+  tiles(db); weightChart(db); weeklyCharts(db); heatmap(db);
+  verdictStrip(db); tableView(db);
+}
+(async () => {
+  const SQL = await initSqlJs({ locateFile:
+    f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/${f}` });
+  $("#file").addEventListener("change", async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    render(new SQL.Database(new Uint8Array(await f.arrayBuffer())), f.name);
+  });
+  try {
+    const buf = await (await fetch("demo/health.db")).arrayBuffer();
+    render(new SQL.Database(new Uint8Array(buf)), "demo athlete (synthetic)");
+  } catch {
+    $("#dropnote").hidden = false;
+  }
+})();
+</script>
+</body>
+</html>
