@@ -75,16 +75,33 @@ a chart on it.
 
 ## Roadmap
 
-Not a feature list. The lens grows when the engine does, and every item
-below is blocked on vitai emitting something it currently does not:
+Not a feature list. Two lists, and the split is the point.
 
-- **Provenance on screen.** A modelled value and a measured one must not be
-  the same ink. The read model carries the columns; nothing here reads them
-  yet, and that is the largest open gap in this repo.
-- **Nutrition panel** once a daily target can be expressed and one system is
-  authoritative for scoring it.
-- **Intervals** (`kg_lo`/`kg_hi`) drawn as intervals rather than discarded.
-- **Session drilldown** from the engine's own per-session output.
+**Ours** - the data is already in the database and the lens simply does not
+read it:
+
+- [#1](https://github.com/Wombat164/vitai-lens/issues/1) **Provenance on
+  screen.** A modelled value and a measured one are currently the same ink.
+  The largest open gap here, and the one thing not blocked on anyone else.
+- [#2](https://github.com/Wombat164/vitai-lens/issues/2) The `resolution`
+  table records source disagreements the athlete never sees.
+- [#3](https://github.com/Wombat164/vitai-lens/issues/3) Vendor sql.js - the
+  page does not work offline and the parser comes from a CDN unpinned.
+
+**Theirs** - found by this client hitting a wall, which is what it is for:
+
+- [vitai#207](https://github.com/Wombat164/vitai/issues/207) The built
+  database is not a function of the record alone: `goal_progress` follows the
+  wall clock and the viewpoint is not recorded. It ships empty.
+- [vitai#208](https://github.com/Wombat164/vitai/issues/208) No weekly rollup
+  of sessions or distance, so every client computes the most ordinary chart
+  in the genre - and this one got it wrong twice before anyone noticed.
+- [vitai#209](https://github.com/Wombat164/vitai/issues/209) What may a client
+  show as a headline figure without inventing it? The four tiles this repo
+  had to delete.
+
+A third list, deliberately empty: things the lens works around. There are
+none, and there should never be any.
 
 ## Demo data
 
