@@ -551,10 +551,15 @@ const REFUSAL = {
   not_supported: "not something this engine judges",
   contraindicated: "judging this would be unsafe here",
   suppressed: "the athlete asked not to see this",
+  // Contract 22. Unlike the other five this one is not final: the question
+  // is answerable and the answer has not arrived. `verdicts.due` carries
+  // when it is expected, so the client can say "by morning" instead of the
+  // most robotic sentence this engine can make anyone say.
+  pending: "not yet - a source will have this later",
 };
 function verdictStrip(db) {
   const v = rows(db,
-    "SELECT week, metric, value, target, verdict, reason FROM verdicts ORDER BY week");
+    "SELECT week, metric, value, target, verdict, reason, due FROM verdicts ORDER BY week");
   if (!v.length) { $("#c-verd").textContent = "no verdicts in this database"; return; }
   const weeks = [...new Set(v.map(r => r.week))].sort().slice(-12);
   const metrics = [...new Set(v.map(r => r.metric))];
@@ -620,7 +625,7 @@ function verdictStrip(db) {
       // the judgement; showing the value anyway invites the reader to make it
       // themselves, which is the refusal defeated by tooltip.
       (declined
-        ? `<br>${REFUSAL[r.reason] ?? `reason not stated (${r.reason ?? "null"})`}`
+        ? `<br>${REFUSAL[r.reason] ?? `reason not stated (${r.reason ?? "null"})`}` + (r.due ? `<br>expected ${r.due}` : "")
         : (r.value != null
             ? `<br>value ${fmt(r.value, 2)}${r.target != null ? ` / target ${fmt(r.target, 2)}` : ""}`
             : "")),
@@ -702,7 +707,7 @@ function tableView(db) {
 // confident-looking subset and gave no sign it was doing so. A client that
 // will not start is a bug report. A client that renders sixty per cent of the
 // truth and looks complete is a lie with a chart on it.
-const BUILT_AGAINST_CONTRACT = "21";
+const BUILT_AGAINST_CONTRACT = "22";
 
 function dbContract(db) {
   try {
