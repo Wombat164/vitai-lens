@@ -25,41 +25,66 @@ machine**.
 
 ## What it shows (v0.1)
 
-- Stat tiles: 7-day weight average, week-over-week rate, verdict adherence,
-  4-week run volume
-- Weight: 7-day rolling average over raw weigh-ins, crosshair + tooltip
-- Weekly running distance and stacked sessions-per-week (runs + gym)
-- Daily-steps calendar heatmap (12 weeks, sequential teal ramp)
-- The engine's weekly **goal-attainment verdicts** per metric - glyph +
-  color cells (= on target, - behind, + ahead), never color alone
+- Weight: every weigh-in the record holds, positioned by date, with gaps
+  drawn as gaps
+- Weekly running distance and sessions per week
+- Daily-steps calendar heatmap
+- The engine's weekly **goal-attainment verdicts** per metric, including
+  refusals with the reason the engine gave, and empty cells where it
+  emitted no row at all
 - A table view for accessibility and copy-paste
 
 Light and dark mode follow the system; the chart palette is validated for
-color-vision deficiency and surface contrast in both modes (teal/amber
-categorical pair, one-hue sequential ramp, status colors reserved for
-verdicts).
+color-vision deficiency and surface contrast in both modes.
+
+## The one rule
+
+**The lens may not compute.** Every number on screen came out of a table.
+No averages, no rates, no totals, no percentages, no re-bucketing.
+
+If the lens cannot render something without deriving it, that is an issue
+against vitai, not code here. The lens's blank spaces are the roadmap, and
+they belong to the engine. See [RULES.md](RULES.md) for why.
+
+This is what makes the repo worth having. A client that computes is
+answering its own question and proves nothing about the engine - and it
+hides engine gaps, because a number the engine will not stand behind
+appears anyway, slightly differently in every consumer.
 
 ## Relationship to vitai
 
-vitai-lens is deliberately a SEPARATE repo: it is the first consumer of
+vitai-lens is deliberately a SEPARATE repo: it is the reference consumer of
 vitai's platform contract (the `health.db` tables + `verdicts` +
 `meta.contract`), which keeps the engine honest - if the lens needs a
 schema change, so would any game or third-party dashboard, and that
 conversation happens in the contract, not in private coupling. The lens
 never writes: the record and its derivations belong to the engine.
 
-`meta.contract` compatibility: built against contract `1`.
+That framing has already paid for itself. The first audit of this repo
+found that the lens had quietly become a second engine - four of four stat
+tiles and three of five charts were computed here - and the fix produced
+four new rules and a contract the engine now emits. The lens found them by
+falling into them, which is the cheapest way to find anything.
 
-## Roadmap (increments, mirroring vitai's discipline)
+`meta.contract` compatibility: built against contract `21`, and the page
+**refuses to render** on a mismatch. Most queries would still resolve
+against a newer contract, so the page would look complete while silently
+dropping whatever that contract added. A client that will not start is a
+bug report; a client that renders sixty per cent of the truth is a lie with
+a chart on it.
 
-- L1: session drilldown (per-run pace/HR), month/quarter time-range filter,
-  nutrition panel (kcal in/out, protein) from `daily`
-- L2: cross-correlation explorer (any metric vs any metric, with lag) -
-  exploratory analytics live HERE, not in the engine; the engine owns only
-  canonical derivations
-- L3: baselines/streaks panels when vitai v0.6.0 ships them; inference
-  panel reading the third data tier
-- L4: goal progress views when `goals.jsonl` lands (vitai v0.3.0)
+## Roadmap
+
+Not a feature list. The lens grows when the engine does, and every item
+below is blocked on vitai emitting something it currently does not:
+
+- **Provenance on screen.** A modelled value and a measured one must not be
+  the same ink. The read model carries the columns; nothing here reads them
+  yet, and that is the largest open gap in this repo.
+- **Nutrition panel** once a daily target can be expressed and one system is
+  authoritative for scoring it.
+- **Intervals** (`kg_lo`/`kg_hi`) drawn as intervals rather than discarded.
+- **Session drilldown** from the engine's own per-session output.
 
 ## Demo data
 

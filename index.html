@@ -93,6 +93,19 @@
   th:first-child, td:first-child { text-align: left; }
   th { color: var(--ink-2); font-weight: 600; }
   #dropnote { color: var(--ink-mut); font-size: 13px; padding: 30px 0; }
+  /* Absence is a word, never a dash and never a blank. It is styled quietly
+     but LEGIBLY: the point is that the reader can see the record said nothing,
+     not that the cell looks empty. */
+  .absent { color: var(--ink-mut); font-style: italic; font-size: 12px; }
+  /* An ordinal-only quantity: the engine vouches for the ordering, not the
+     magnitude. Marked in the cell rather than in a footnote, because a reader
+     who has to remember a footnote will read the number as exact. */
+  .ordinal { color: var(--ink-2); border-bottom: 1px dotted var(--ink-mut);
+             cursor: help; }
+  .note { color: var(--ink-mut); font-size: 12.5px; line-height: 1.5;
+          border-left: 2px solid var(--border); padding: 2px 0 2px 12px;
+          margin: 0 0 16px; }
+  .note code { font-size: 11.5px; }
 </style>
 </head>
 <body class="viz-root">
@@ -109,10 +122,15 @@
   <div id="dropnote" hidden>Loading the demo database... (if this page was opened
     as a local file, use the button above to open <code>demo/health.db</code> or
     your own <code>derived/health.db</code>)</div>
-  <div class="tiles" id="tiles"></div>
+  <p class="note" id="tiles">This is the <strong>conformance client</strong> for
+    vitai, not a stats product: it proves the engine's read model is consumable
+    by someone who is not the flagship app. Its one rule is that
+    <strong>it may not compute</strong> - every number here came out of a table.
+    Where a figure is missing, the engine does not emit it, and that is a
+    finding rather than a gap in this page. See <code>RULES.md</code>.</p>
   <div class="cards">
     <div class="card"><h2>Weight</h2>
-      <p class="hint">7-day rolling average (line) over raw weigh-ins (dots)</p>
+      <p class="hint">every weigh-in the record holds, positioned by date</p>
       <div id="c-weight"></div></div>
     <div class="card"><h2>Weekly running distance</h2>
       <p class="hint">km per ISO week, runs and tests</p>
@@ -193,27 +211,48 @@ function niceTicks(min, max, n = 4) {
 function weightChart(db) {
   const w = rows(db, "SELECT date, kg FROM weight WHERE kg IS NOT NULL ORDER BY date");
   if (!w.length) return;
-  const roll = w.map((r, i) => {
-    const win = w.slice(Math.max(0, i - 6), i + 1).map(x => x.kg);
-    return { date: r.date, kg: r.kg, avg: win.reduce((a, b) => a + b) / win.length };
-  });
+  // The rolling mean is GONE. It was computed here, over the last 7 WEIGH-INS
+  // rather than 7 days, and then drawn at full strength in the series colour
+  // with a direct label - while the measured weigh-ins it was derived from sat
+  // underneath as 55%-opacity grey dots. The modelled line was the primary ink
+  // and the observations were the ornament, which is the provenance hierarchy
+  // exactly inverted. The engine does not emit a rolling mean; if one is
+  // wanted it is a vitai issue.
+  const roll = w;
   const W = 980, H = 240, L = 46, R = 60, T = 14, B = 26;
-  const xs = roll.map(r => r.date);
-  const x = (d) => L + (xs.indexOf(d) / Math.max(1, xs.length - 1)) * (W - L - R);
-  const vals = roll.flatMap(r => [r.kg, r.avg]);
+  // Positioned by DATE, not by array index. The old scale spaced weigh-ins
+  // evenly regardless of the days between them, so a three-day gap rendered
+  // the same width as a consecutive pair and every gap asserted a rate of
+  // change up to three times too steep - in measured-data ink.
+  const day = (d) => Date.parse(d + "T00:00:00Z") / 86400000;
+  const d0 = day(w[0].date), d1 = day(w[w.length - 1].date);
+  const dspan = (d1 - d0) || 1;
+  const x = (d) => L + ((day(d) - d0) / dspan) * (W - L - R);
+  const vals = w.map(r => r.kg);
   const lo = Math.min(...vals) - 0.3, hi = Math.max(...vals) + 0.3;
   const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
   const svg = frame($("#c-weight"), W, H);
   gridY(svg, niceTicks(lo, hi, 4), L, W - R, y, v => fmt(v, 1));
-  for (const r of roll)                                   /* raw dots, muted */
-    svg.append(svgEl("circle", { cx: x(r.date), cy: y(r.kg), r: 2.5,
-      fill: css("--ink-mut"), "fill-opacity": .55 }));
-  const path = roll.map((r, i) => `${i ? "L" : "M"}${x(r.date)},${y(r.avg)}`).join("");
-  svg.append(svgEl("path", { d: path, fill: "none",
-    stroke: css("--series-1"), "stroke-width": 2, "stroke-linejoin": "round" }));
-  const last = roll[roll.length - 1];                     /* direct label */
-  const lab = svgEl("text", { x: x(last.date) + 8, y: y(last.avg) + 4, class: "val" });
-  lab.textContent = fmt(last.avg, 1) + " kg"; svg.append(lab);
+  // Consecutive weigh-ins are joined; a gap of more than two days is drawn as
+  // a dotted span, because the record says nothing about what happened in
+  // between and a solid line there would be the chart inventing it.
+  for (let i = 1; i < w.length; i++) {
+    const gap = day(w[i].date) - day(w[i - 1].date);
+    svg.append(svgEl("line", {
+      x1: x(w[i - 1].date), y1: y(w[i - 1].kg),
+      x2: x(w[i].date), y2: y(w[i].kg),
+      stroke: css(gap > 2 ? "--ink-mut" : "--series-1"),
+      "stroke-width": gap > 2 ? 1 : 1.6,
+      "stroke-dasharray": gap > 2 ? "2 3" : "none",
+      "stroke-opacity": gap > 2 ? .6 : 1 }));
+  }
+  // The measurements are the primary ink now.
+  for (const r of w)
+    svg.append(svgEl("circle", { cx: x(r.date), cy: y(r.kg), r: 2.8,
+      fill: css("--series-1") }));
+  const last = w[w.length - 1];                           /* direct label */
+  const lab = svgEl("text", { x: x(last.date) + 8, y: y(last.kg) + 4, class: "val" });
+  lab.textContent = fmt(last.kg, 1) + " kg"; svg.append(lab);
   for (const d of [xs[0], xs[Math.floor(xs.length / 2)], xs[xs.length - 1]]) {
     const t = svgEl("text", { x: x(d), y: H - 8, "text-anchor": "middle" });
     t.textContent = d.slice(5); svg.append(t);
@@ -227,13 +266,18 @@ function weightChart(db) {
   hot.addEventListener("mousemove", (ev) => {
     const r = svg.getBoundingClientRect();
     const px = (ev.clientX - r.left) / r.width * W;
-    const i = Math.max(0, Math.min(roll.length - 1,
-      Math.round((px - L) / (W - L - R) * (roll.length - 1))));
-    const p = roll[i];
+    // Nearest weigh-in by DATE, matching the scale. Snapping by array index
+    // would put the crosshair on a different point from the one under the
+    // cursor wherever the record is sparse.
+    let p = w[0], best = Infinity;
+    for (const r of w) {
+      const dx = Math.abs(x(r.date) - px);
+      if (dx < best) { best = dx; p = r; }
+    }
     cross.setAttribute("x1", x(p.date)); cross.setAttribute("x2", x(p.date));
     cross.setAttribute("visibility", "visible");
-    showTip(`<span class="t">${p.date}</span><br>weigh-in <b>${fmt(p.kg)}</b> kg` +
-            `<br>7d avg <b>${fmt(p.avg)}</b> kg`, ev.clientX, ev.clientY);
+    showTip(`<span class="t">${p.date}</span><br>weigh-in <b>${fmt(p.kg)}</b> kg`,
+            ev.clientX, ev.clientY);
   });
   hot.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
   svg.append(hot);
@@ -346,10 +390,22 @@ const VERDICT = {
   on_target: { c: "--good", g: "=", label: "on target" },
   behind: { c: "--serious", g: "-", label: "behind" },
   ahead: { c: "--info", g: "+", label: "ahead" },
-  no_data: { c: "--ink-mut", g: "·", label: "no data" },
+  no_data: { c: "--ink-mut", g: "?", label: "declined" },
+};
+// The engine does not have one refusal. It has five, and it refuses to write a
+// declined row without saying which - that whole column exists so a consumer
+// cannot reverse-engineer the reason from the row's shape. Collapsing them
+// back into one grey square throws away exactly what was paid for.
+const REFUSAL = {
+  no_input: "nothing in the record to judge",
+  no_policy: "no target or threshold in force",
+  not_supported: "not something this engine judges",
+  contraindicated: "judging this would be unsafe here",
+  suppressed: "the athlete asked not to see this",
 };
 function verdictStrip(db) {
-  const v = rows(db, "SELECT week, metric, value, target, verdict FROM verdicts ORDER BY week");
+  const v = rows(db,
+    "SELECT week, metric, value, target, verdict, reason FROM verdicts ORDER BY week");
   if (!v.length) { $("#c-verd").textContent = "no verdicts in this database"; return; }
   const weeks = [...new Set(v.map(r => r.week))].sort().slice(-12);
   const metrics = [...new Set(v.map(r => r.metric))];
@@ -365,83 +421,172 @@ function verdictStrip(db) {
       x: LW + wi * (CS + GAP) + CS / 2, y: 14, "text-anchor": "middle" });
       t.textContent = wk.slice(5); svg.append(t); }
   });
-  for (const r of v) {
+  // Iterate the GRID, not the rows. Drawing only where a row exists meant a
+  // (week, metric) pair the engine never emitted rendered as blank page - and
+  // "the engine emitted nothing here" is a different statement from "the
+  // engine declined", which is different again from "on target". Three
+  // statements, and the old strip had one rendering for two of them.
+  const byCell = new Map(v.map(r => [`${r.week}${r.metric}`, r]));
+  const cells = [];
+  for (const week_ of weeks) for (const metric of metrics)
+    cells.push(byCell.get(`${week_}${metric}`) ?? { week: week_, metric, absent: true });
+  for (const r of cells) {
     const wi = weeks.indexOf(r.week), mi = metrics.indexOf(r.metric);
     if (wi < 0) continue;
-    const spec = VERDICT[r.verdict] || VERDICT.no_data;
+    if (r.absent) {
+      // No row at all: an outline with no glyph and no colour. Deliberately
+      // distinct from a declined cell, which the engine DID consider.
+      const x0 = LW + wi * (CS + GAP), y0 = 26 + mi * (CS + GAP);
+      const box = svgEl("rect", { x: x0, y: y0, width: CS, height: CS, rx: 5,
+        fill: "none", stroke: css("--ink-mut"), "stroke-width": 1,
+        "stroke-opacity": .35 });
+      box.addEventListener("mousemove", ev => showTip(
+        `<span class="t">week of ${r.week}</span><br>${r.metric.replace("_", " ")}: ` +
+        "<b>no row</b><br>the engine emitted nothing for this week",
+        ev.clientX, ev.clientY));
+      box.addEventListener("mouseleave", hideTip);
+      svg.append(box);
+      continue;
+    }
+    // An unknown verdict word is NOT quietly mapped onto "declined". If the
+    // engine grows a fifth verdict, this client must say it does not know it
+    // rather than render it as a refusal, which would be a different claim.
+    const known = Object.prototype.hasOwnProperty.call(VERDICT, r.verdict);
+    const spec = known ? VERDICT[r.verdict]
+                       : { c: "--ink-mut", g: "!", label: `unknown verdict "${r.verdict}"` };
+    const declined = r.verdict === "no_data";
     const x = LW + wi * (CS + GAP), y = 26 + mi * (CS + GAP);
+    // A refusal is a real statement, so it gets a real cell. It was previously
+    // drawn at 25% opacity, which reads as a rendering artefact rather than as
+    // the engine declining to answer, and the white glyph on top was invisible
+    // against it - leaving colour as the only channel.
     const cell = svgEl("rect", { x, y, width: CS, height: CS, rx: 5,
-      fill: css(spec.c), "fill-opacity": r.verdict === "no_data" ? .25 : .9 });
+      fill: declined ? "none" : css(spec.c), "fill-opacity": declined ? 1 : .9,
+      stroke: css(spec.c), "stroke-width": declined ? 1.5 : 0,
+      "stroke-dasharray": declined ? "3 2" : "none" });
     cell.addEventListener("mousemove", ev => showTip(
       `<span class="t">week of ${r.week}</span><br>${r.metric.replace("_", " ")}: ` +
-      `<b>${spec.label}</b>` + (r.value != null ?
-        `<br>value ${fmt(r.value, 2)}${r.target != null ? ` / target ${fmt(r.target, 2)}` : ""}` : ""),
+      `<b>${spec.label}</b>` +
+      // A declined cell shows its REASON and no number. The engine withheld
+      // the judgement; showing the value anyway invites the reader to make it
+      // themselves, which is the refusal defeated by tooltip.
+      (declined
+        ? `<br>${REFUSAL[r.reason] ?? `reason not stated (${r.reason ?? "null"})`}`
+        : (r.value != null
+            ? `<br>value ${fmt(r.value, 2)}${r.target != null ? ` / target ${fmt(r.target, 2)}` : ""}`
+            : "")),
       ev.clientX, ev.clientY));
     cell.addEventListener("mouseleave", hideTip);
     svg.append(cell);
     const g = svgEl("text", { x: x + CS / 2, y: y + CS / 2 + 4,
-      "text-anchor": "middle", style: "fill:#fff;font-weight:700" });
+      "text-anchor": "middle",
+      style: `fill:${declined ? css("--ink-mut") : "#fff"};font-weight:700` });
     g.textContent = spec.g; svg.append(g);
   }
 }
 
 /* -------------------------------- tiles ---------------------------------- */
-function tiles(db) {
-  const w = rows(db, "SELECT date, kg FROM weight WHERE kg IS NOT NULL ORDER BY date");
-  const v = rows(db, "SELECT week, metric, verdict FROM verdicts");
-  const km4 = rows(db, `SELECT COALESCE(SUM(distance_km),0) AS km FROM sessions
-    WHERE type IN ('run','test') AND date >= (SELECT DATE(MAX(date), '-27 day') FROM daily)`);
-  const el = $("#tiles"); el.replaceChildren();
-  const tile = (k, val, d, up) => {
-    const t = document.createElement("div"); t.className = "tile";
-    t.innerHTML = `<div class="k">${k}</div><div class="v">${val}</div>` +
-                  (d ? `<div class="d${up ? " up" : ""}">${d}</div>` : "");
-    el.append(t);
-  };
-  if (w.length) {
-    const last7 = w.slice(-7).map(r => r.kg), prev7 = w.slice(-14, -7).map(r => r.kg);
-    const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
-    tile("Weight (7d avg)", fmt(avg(last7), 1) + " kg",
-         `latest ${fmt(w[w.length - 1].kg, 1)} on ${w[w.length - 1].date}`);
-    if (prev7.length) {
-      const rate = avg(prev7) - avg(last7);
-      tile("Rate", `${rate >= 0 ? "-" : "+"}${fmt(Math.abs(rate), 2)} kg/wk`,
-           "week-over-week of 7d averages", rate > 0);
-    }
-  }
-  const wr = v.filter(r => r.metric === "weight_rate" && r.verdict !== "no_data");
-  if (wr.length) {
-    const on = wr.filter(r => r.verdict === "on_target").length;
-    tile("Rate weeks on target", `${on}/${wr.length}`,
-         "per the engine's verdicts table");
-  }
-  const dv = v.filter(r => r.verdict !== "no_data");
-  if (dv.length) {
-    const on = dv.filter(r => r.verdict === "on_target").length;
-    tile("Overall adherence", Math.round(on / dv.length * 100) + "%",
-         "all metrics, all verdict weeks");
-  }
-  if (km4.length) tile("Run km, last 4 wk", fmt(km4[0].km, 0) + " km");
-}
+//
+// REMOVED. All four tiles were derivations, and under RULES.md the lens may
+// not compute. Recorded here rather than deleted silently, because each one is
+// now a question for the engine and the list is this repo's most useful output.
+//
+//   "Weight (7d avg)"        a rolling mean over the last 7 WEIGH-INS, not
+//                            7 days, and labelled "7d" on four surfaces. The
+//                            window silently stretched across every gap.
+//   "Rate"                   a week-over-week rate the client invented - and
+//                            the engine already emits one, judged against the
+//                            phase target, which this ignored. It then
+//                            coloured weight loss green, reintroducing a
+//                            judgement the engine deliberately withholds.
+//   "Rate weeks on target"   a count over verdicts with refusals dropped.
+//   "Overall adherence"      a verdict over verdicts, refusals dropped from
+//                            the denominator, captioned "all verdict weeks".
+//                            A record 90% unjudgeable could display 100%.
+//
+// The last one is why the rule exists. The engine added a whole `reason`
+// column so a consumer could not flatten "the record holds nothing to judge"
+// into "not counted". This flattened it into "not counted".
+//
+// If these numbers are wanted, they are vitai issues. A client that computes
+// them is answering its own question and proving nothing about the engine.
 
 /* -------------------------------- table ---------------------------------- */
 function tableView(db) {
   const d = rows(db, `SELECT date, steps, kcal_in, kcal_out, sleep_h, rhr
                       FROM daily ORDER BY date DESC LIMIT 30`);
+  // Absence renders as absence, not as a dash. A dash is punctuation and reads
+  // as "nothing much"; the record's actual claim is that nobody looked, which
+  // is a fact about the LOG and not about the athlete. Same reason a zero is
+  // never used here: a day with no steps row and a day with zero steps are
+  // different statements and must not share a rendering.
+  const val = (v) => v == null
+    ? '<span class="absent">not recorded</span>'
+    : String(v);
+  // `kcal_out` is expenditure at day resolution: the engine will vouch for the
+  // ordering and not the magnitude, so it is marked rather than printed as a
+  // bare cardinal to the unit. Readers do not discount a number that looks
+  // exact, so the discounting has to be visible in the cell.
+  const ordinal = (v) => v == null
+    ? '<span class="absent">not recorded</span>'
+    : `<span class="ordinal" title="ordinal only: the engine vouches for the ` +
+      `ordering of these values, not the magnitude">~${v}</span>`;
   const h = ["date", "steps", "kcal in", "kcal out", "sleep h", "rhr"];
   $("#tableview").innerHTML = "<table><thead><tr>" +
     h.map(c => `<th>${c}</th>`).join("") + "</tr></thead><tbody>" +
-    d.map(r => `<tr><td>${r.date}</td><td>${r.steps ?? "-"}</td>` +
-      `<td>${r.kcal_in ?? "-"}</td><td>${r.kcal_out ?? "-"}</td>` +
-      `<td>${r.sleep_h ?? "-"}</td><td>${r.rhr ?? "-"}</td></tr>`).join("") +
+    d.map(r => `<tr><td>${r.date}</td><td>${val(r.steps)}</td>` +
+      `<td>${val(r.kcal_in)}</td><td>${ordinal(r.kcal_out)}</td>` +
+      `<td>${val(r.sleep_h)}</td><td>${val(r.rhr)}</td></tr>`).join("") +
     "</tbody></table>";
 }
 
 /* -------------------------------- boot ----------------------------------- */
+
+// The contract this client was built against. See RULES.md: the lens refuses
+// to render on a mismatch rather than showing whatever still happens to
+// resolve.
+//
+// Every SELECT in this file kept working when the engine moved from contract 1
+// to contract 21, because the columns they name still exist. What changed
+// underneath was everything that matters - per-row provenance, refusal
+// reasons, intervals, and a dozen derived tables - so the page rendered a
+// confident-looking subset and gave no sign it was doing so. A client that
+// will not start is a bug report. A client that renders sixty per cent of the
+// truth and looks complete is a lie with a chart on it.
+const BUILT_AGAINST_CONTRACT = "21";
+
+function dbContract(db) {
+  try {
+    const r = rows(db, "SELECT value FROM meta WHERE key = 'contract'");
+    return r.length ? String(r[0].value) : null;
+  } catch { return null; }        // no meta table at all: pre-contract database
+}
+
+function refuse(html) {
+  const note = $("#dropnote");
+  note.hidden = false;
+  note.innerHTML = html;
+  for (const sel of ["#tiles", "#charts", "#verdicts", "#table"]) {
+    const el = $(sel); if (el) el.innerHTML = "";
+  }
+}
+
 function render(db, label) {
+  const got = dbContract(db);
+  if (got !== BUILT_AGAINST_CONTRACT) {
+    refuse(
+      "<strong>This lens cannot read that database.</strong><br>" +
+      `It was built against vitai contract <code>${BUILT_AGAINST_CONTRACT}</code>, ` +
+      `and the file reports <code>${got ?? "no contract at all"}</code>.<br><br>` +
+      "Nothing is rendered, on purpose. Most of the queries would still " +
+      "resolve and the page would look complete, while silently dropping " +
+      "whatever this contract added - which is worse than showing you nothing.");
+    $("#source-note").textContent = label + " - refused";
+    return;
+  }
   $("#source-note").textContent = label;
   $("#dropnote").hidden = true;
-  tiles(db); weightChart(db); weeklyCharts(db); heatmap(db);
+  weightChart(db); weeklyCharts(db); heatmap(db);
   verdictStrip(db); tableView(db);
 }
 (async () => {

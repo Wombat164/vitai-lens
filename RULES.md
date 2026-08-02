@@ -1,0 +1,47 @@
+# What vitai-lens is, and the one rule
+
+vitai-lens is the **conformance client** for [vitai](https://github.com/Wombat164/vitai): a barebones, open-source reader that proves the engine's read model is consumable by someone who is not the flagship app.
+
+It is not a stats product. It is the demonstration that vitai did the hard work, and that a client can be thin.
+
+## The rule
+
+**The lens may not compute.**
+
+Every number on screen comes from a table in `health.db`. No averages, no rates, no totals, no percentages, no re-bucketing, no classification. If a value is on screen, a `SELECT` returned it.
+
+That is the entire discipline, and everything else follows from it.
+
+## Why the rule is the point
+
+A client that computes cannot prove anything about the engine, because it is answering its own questions. The moment the lens derives a rolling mean, that mean is the lens's claim about the athlete, not vitai's, and the athlete has no way to tell the two apart.
+
+Worse, a computing client hides engine gaps. If the lens can quietly average some rows when the engine will not, nobody discovers that the engine has no opinion. The gap gets papered over in every consumer independently, each one slightly differently.
+
+So the rule inverts that:
+
+> **If the lens cannot render something without deriving it, that is an issue against vitai, not code in the lens.**
+
+The lens's inability to answer a question is a *finding*. It is the most useful thing this repo produces. The founding README said a separate consumer keeps the engine honest, because if the lens needs a schema change then so would any game or third-party dashboard. That was correct, and the first audit of this repo proved it by finding four rules and a contract the engine now emits. The lens found them by falling into them, which is the cheapest way to find anything.
+
+## What follows from the rule
+
+**Contract gate.** The lens declares the contract it was built against and refuses to render on a mismatch, loudly. A client that renders sixty per cent of the truth and looks complete is worse than one that will not start. Silent partial success is the failure mode this whole project exists to avoid.
+
+**Provenance reaches the screen.** A modelled value and a measured one may not be the same ink. A photo-estimated weight and a scale reading are different facts, and a UI that flattens them has turned a claim about the engine's arithmetic into a claim about the athlete's body.
+
+**Absence renders as absence.** Never a dash, never a zero, never an empty cell, never a gap in a chart. "Nothing recorded", "computed and declined", and "not applicable" are three different statements and must read as three different things.
+
+**A refusal renders as a refusal, with its reason.** The engine goes to the trouble of saying *why* it will not answer. A client that collapses every reason into one grey square has thrown away the distinction the engine paid for.
+
+**Ordinal quantities are not rendered as cardinals.** Where the engine will vouch for the ordering and not the magnitude, the lens may not print a bare number with a unit and expect the reader to discount it. Readers do not discount.
+
+## What this repo is not
+
+- **Not a second copy of loadline's stats pane.** Loadline is the product; this is the proof. If the two ever disagree about a number, exactly one of them computed it, and that one is wrong.
+- **Not a place to be clever.** Charts here are plain on purpose. A chart that flatters the data is a chart that has an opinion.
+- **Not feature-complete, ever.** The lens shows what the engine offers. Its blank spaces are the roadmap, and they belong to vitai.
+
+## For anyone reading this to build their own client
+
+Start here. The contract is `health.db`, the rules above are what honest consumption looks like, and every place this repo says "the engine does not emit this" is a place you would have had to invent something. Do not invent it. File it.
