@@ -138,12 +138,27 @@ What transfers unchanged:
 
 What does not transfer, and why:
 
-- **The lens may not compute; loadline may.** So loadline will have a third
-  class the lens does not: numbers *it* derived, which are neither the engine's
-  observation nor the engine's derivation. If those are inked the same as
-  engine-derived numbers, the client has borrowed the engine's authority for
-  its own arithmetic. They need their own treatment, and the lens deliberately
-  has no opinion on what it should be because it never faces the problem.
+- **Loadline MAY compute, and so it has a third class.** This entry has been
+  wrong twice today and the history is worth keeping. It first said loadline
+  may compute; I then "corrected" it after reading that repo's
+  `determinism.md`, which forbade client arithmetic outright; the operator
+  then pointed out that the prohibition is too strong - any value objectively
+  derivable from the engine's facts should be permitted, or developers lose
+  the freedom to build what their users need, and the ENGINE staying factual
+  is what actually matters. That argument is right and `determinism.md` was
+  revised on 2026-08-04.
+
+  So loadline has **recorded, engine-derived and client-derived**, and the
+  third needs its own treatment: a figure the client computed, inked like an
+  engine one, has borrowed the record's authority for its own arithmetic. The
+  lens still has only two, because a conformance client that computes cannot
+  prove anything about the engine - that is a reason specific to the lens's
+  job, not a general rule about clients, and stating it as one was the error.
+
+  The line that replaces it: **would two honest clients computing this from
+  the same rows disagree?** If they cannot, it is objective and a client may
+  do it. If they could, it is a judgement, and it belongs to the engine or to
+  nobody.
 - **Contrast tokens are palette-specific.** The ratios are not: 4.5:1 minimum
   for a figure someone has to read, checked against the surface it sits on and
   not against the page background.
