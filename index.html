@@ -226,7 +226,10 @@
     <div class="brief" id="brief"></div></div>
   <div class="cards">
     <div class="card"><h2>Weight</h2>
-      <p class="hint">every weigh-in the record holds, positioned by date</p>
+      <p class="hint">every weigh-in the record holds, positioned by date, drawn
+        by the origin the record gives it - a value whose custody was never
+        written down is not the same ink as one a scale measured</p>
+      <div class="legend" id="weight-legend"></div>
       <div id="c-weight"></div></div>
     <div class="card"><h2>Weekly distance</h2>
       <p class="hint">every session that recorded a distance, bucketed by the
@@ -288,6 +291,28 @@ function svgEl(tag, attrs) {
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   return e;
 }
+/* Marks for provenance. The lens may not CLASSIFY, so these are keyed on the
+ * stored `origin` value itself rather than on any grouping invented here: a
+ * new origin gets its own mark and its own legend entry, and nothing silently
+ * joins a bucket it was never put in. Absence is the one fixed case, because
+ * "no origin recorded" is a different KIND of statement from any value. */
+const MARKS = ["circle", "square", "diamond", "triangle"];
+
+function markEl(shape, cx, cy, size, attrs) {
+  const r = size;
+  if (shape === "square")
+    return svgEl("rect", { x: cx - r, y: cy - r, width: r * 2, height: r * 2, ...attrs });
+  if (shape === "diamond")
+    return svgEl("polygon", {
+      points: `${cx},${cy - r * 1.3} ${cx + r * 1.3},${cy} ${cx},${cy + r * 1.3} ${cx - r * 1.3},${cy}`,
+      ...attrs });
+  if (shape === "triangle")
+    return svgEl("polygon", {
+      points: `${cx},${cy - r * 1.4} ${cx + r * 1.3},${cy + r} ${cx - r * 1.3},${cy + r}`,
+      ...attrs });
+  return svgEl("circle", { cx, cy, r, ...attrs });
+}
+
 function frame(mount, W, H) {
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%",
                              style: `max-width:${W}px;display:block` });
@@ -311,7 +336,8 @@ function niceTicks(min, max, n = 4) {
 
 /* ------------------------------ weight chart ----------------------------- */
 function weightChart(db) {
-  const w = rows(db, "SELECT date, kg FROM weight WHERE kg IS NOT NULL ORDER BY date");
+  const w = rows(db, "SELECT date, kg, origin, source, capture, device, path " +
+                     "FROM weight WHERE kg IS NOT NULL ORDER BY date");
   if (!w.length) return;
   // The rolling mean is GONE. It was computed here, over the last 7 WEIGH-INS
   // rather than 7 days, and then drawn at full strength in the series colour
@@ -348,10 +374,57 @@ function weightChart(db) {
       "stroke-dasharray": gap > 2 ? "2 3" : "none",
       "stroke-opacity": gap > 2 ? .6 : 1 }));
   }
-  // The measurements are the primary ink now.
-  for (const r of w)
-    svg.append(svgEl("circle", { cx: x(r.date), cy: y(r.kg), r: 2.8,
-      fill: css("--series-1") }));
+  /* The measurements are the primary ink now, and they are no longer all the
+   * SAME ink. Half of this record's weigh-ins carry no origin at all, and
+   * drawing them identically to the ones a scale measured was the page making
+   * a claim about custody that the record does not support. Ordered by how
+   * often each origin appears, so the commonest keeps the plain filled dot. */
+  const originCount = new Map();
+  for (const r of w) {
+    const k = r.origin === null || r.origin === undefined ? null : String(r.origin);
+    originCount.set(k, (originCount.get(k) || 0) + 1);
+  }
+  const named = [...originCount.entries()].filter(([k]) => k !== null)
+    .sort((a, b) => b[1] - a[1]);
+  const shapeOf = new Map(named.map(([k], i) => [k, MARKS[i % MARKS.length]]));
+  const originKey = (r) =>
+    (r.origin === null || r.origin === undefined) ? null : String(r.origin);
+
+  for (const r of w) {
+    const k = originKey(r);
+    if (k === null) {
+      // Hollow and muted: the value is real, its custody is not recorded, and
+      // the mark should not borrow the authority of a measurement.
+      svg.append(svgEl("circle", { cx: x(r.date), cy: y(r.kg), r: 3,
+        fill: "none", stroke: css("--ink-mut"), "stroke-width": 1.2 }));
+    } else {
+      svg.append(markEl(shapeOf.get(k), x(r.date), y(r.kg), 2.8,
+        { fill: css("--series-1") }));
+    }
+  }
+
+  /* The legend names the stored values verbatim. No prettifying: `athlete+scale`
+   * is what the record says, and rewriting it here would be the lens editing
+   * the provenance it exists to surface. */
+  const legend = $("#weight-legend");
+  if (legend) {
+    legend.innerHTML = "";
+    const entry = (label, n, svgMark) => {
+      const span = document.createElement("span");
+      const box = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      box.setAttribute("width", "12"); box.setAttribute("height", "12");
+      box.appendChild(svgMark);
+      span.appendChild(box);
+      span.appendChild(document.createTextNode(` ${label} ${n}`));
+      legend.appendChild(span);
+    };
+    for (const [k, n] of named)
+      entry(k, n, markEl(shapeOf.get(k), 6, 6, 3, { fill: css("--series-1") }));
+    if (originCount.has(null))
+      entry("origin not recorded", originCount.get(null),
+        svgEl("circle", { cx: 6, cy: 6, r: 3, fill: "none",
+          stroke: css("--ink-mut"), "stroke-width": 1.2 }));
+  }
   const last = w[w.length - 1];                           /* direct label */
   const lab = svgEl("text", { x: x(last.date) + 8, y: y(last.kg) + 4, class: "val" });
   lab.textContent = fmt(last.kg, 1) + " kg"; svg.append(lab);
@@ -384,7 +457,14 @@ function weightChart(db) {
     }
     cross.setAttribute("x1", x(p.date)); cross.setAttribute("x2", x(p.date));
     cross.setAttribute("visibility", "visible");
-    showTip(`<span class="t">${p.date}</span><br>weigh-in <b>${fmt(p.kg)}</b> kg`,
+    const prov = [
+      ["origin", p.origin], ["source", p.source],
+      ["capture", p.capture], ["device", p.device],
+    ].filter(([, v]) => v !== null && v !== undefined)
+     .map(([k, v]) => `<span class="t">${k}</span> ${v}`).join("<br>");
+    showTip(`<span class="t">${p.date}</span><br>weigh-in <b>${fmt(p.kg)}</b> kg` +
+            (prov ? "<br>" + prov
+                  : '<br><span class="t">origin not recorded</span>'),
             ev.clientX, ev.clientY);
   });
   hot.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
