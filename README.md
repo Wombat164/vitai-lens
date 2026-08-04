@@ -26,10 +26,16 @@ machine**.
 ## What it shows (v0.1)
 
 - **The brief**: the record turned into English, by a template engine and
-  not a language model. Every sentence carries a control that runs the
+  not a language model. It opens with the plan and the arc through it -
+  what you said you wanted, and every edit you made to it with the reason
+  you gave at the time. Every sentence carries a control that runs the
   query it came from, so you can disagree with it. See
   [docs/prior-art.md](docs/prior-art.md) for the lineage this borrows from
   and why a small model was rejected rather than merely not attempted.
+- Narrative about a **measurement** sits under the chart that shows it, not
+  in the brief: the sentence about unlogged days is under the heatmap where
+  the unlogged days are drawn. What is left at the bottom is record-wide
+  and belongs to no single chart.
 - Weight: every weigh-in the record holds, positioned by date, with gaps
   drawn as gaps
 - Weekly running distance and sessions per week

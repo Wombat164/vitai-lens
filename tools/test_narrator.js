@@ -31,10 +31,12 @@ const strip = (html) => html
   .replace(/<[^>]+>/g, "")
   .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
-const sections = Narrator.generate(query);
+const mounts = Narrator.generate(query);
+const sections = Object.values(mounts).flat();
 const messages = sections.flatMap(s => s.messages);
 
-console.log(`\nnarrator: ${messages.length} messages in ${sections.length} sections\n`);
+console.log(`\nnarrator: ${messages.length} messages, ${sections.length} sections, ` +
+            `mounted at ${Object.keys(mounts).join(", ")}\n`);
 
 /* ---- it produced something at all ------------------------------------- */
 ok("generates messages", messages.length > 0);

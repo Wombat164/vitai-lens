@@ -239,6 +239,97 @@ const Narrator = (() => {
     }));
   });
 
+  /* ---- the journey ------------------------------------------------------
+   * A plan is not a static thing that gets graded, it is a thing the athlete
+   * keeps rewriting, and the rewrites carry more about the arc than any of
+   * the numbers do. The engine records every edit with the reason given at
+   * the time, so the narrator can tell that part of the story in the
+   * athlete's own words rather than characterising it in its own.          */
+
+  const CHURN = "SELECT date, slug, kind, metric, edit_no, before, after, " +
+                "direction, deadline_pushed, deadline_kind, reason, set_by, " +
+                "suspicious, unexplained FROM plan_churn";
+
+  rule("plan-churn", "journey", 15, (q) => {
+    const sql = CHURN + " ORDER BY date";
+    const rs = q(sql);
+    if (!rs.length) return [];
+    /* A chronology, one edit per line. Run together as a comma list these
+     * became unreadable, because each item already contains commas of its
+     * own - and a sequence of decisions a person made over three months is
+     * not a list of items, it is an order of events. */
+    const lines = rs.map(r => {
+      const what = r.kind === "threshold"
+        ? `the <code>${esc(r.slug)}</code> threshold`
+        : `<em>${esc(r.slug)}</em>`;
+      // Only state a movement the row actually records. `before` equal to
+      // `after` with a pushed deadline is a real and different edit: the
+      // target held and the date moved, and calling that a change to the
+      // target would be the narrator inventing the more dramatic version.
+      const moved = (r.before !== null && r.after !== null && r.before !== r.after)
+        ? `${esc(r.direction)} from ${num(r.before)} to ${num(r.after)}`
+        : (r.deadline_pushed
+            ? `kept its target and moved its ${r.deadline_kind === "hard" ? "hard " : ""}deadline`
+            : esc(r.direction));
+      const why = r.reason ? `: ${quote(r.reason)}` : "";
+      return `<span class="when">${esc(r.date)}</span> ${what} ${moved}${why}`;
+    });
+    return [{
+      tone: "note",
+      text: `The plan moved ${count(rs.length)} ${plural(rs.length, "time")}, ` +
+            `and the record kept the reason each time.` +
+            `<span class="chron">` + lines.join("<br>") + `</span><br>` +
+            `None of that is drift. A plan edited with a reason attached is a ` +
+            `plan being used, and the engine keeps the reasons so that the ` +
+            `edits stay legible as decisions rather than accumulating as noise.`,
+      sql,
+    }];
+  });
+
+  /* The engine flags an edit it finds suspicious. That flag is reported, and
+   * it is reported as a flag: the engine is a piece of software applying a
+   * rule about loosened thresholds, it does not know about the travel week,
+   * and a narrator that repeats a machine's suspicion as if it were a finding
+   * about the person has done something worse than say nothing.            */
+  rule("churn-flagged", "journey", 16, (q) => {
+    const sql = CHURN + " WHERE suspicious = 1";
+    const rs = q(sql);
+    return rs.map(r => ({
+      tone: "watch",
+      text: `The engine flagged one of those edits: ` +
+            `<code>${esc(r.slug)}</code> was ${esc(r.direction)}` +
+            (r.before !== null && r.after !== null
+              ? ` from ${num(r.before)} to ${num(r.after)}` : "") +
+            ` on ${esc(r.date)}. It flags a loosened threshold on principle, ` +
+            `and it is a flag rather than an accusation. ` +
+            (r.reason
+              ? `The reason you gave at the time is in the record: ${quote(r.reason)}. `
+              : `No reason is recorded against it. `) +
+            (r.unexplained === 0
+              ? `The engine marks it explained and is not asking again.`
+              : `The engine still has it down as unexplained.`),
+      sql,
+    }));
+  });
+
+  /* Something that happened and was not in any plan. Reported without being
+   * folded into progress, because an achievement the athlete did not budget
+   * for is not evidence about a target they set for something else.        */
+  rule("achievements", "journey", 17, (q) => {
+    const sql = "SELECT date, title, goal, source, note, occurred_date " +
+                "FROM achievements ORDER BY date";
+    const rs = q(sql);
+    return rs.map(r => ({
+      tone: "good",
+      text: `<strong>${esc(r.title)}</strong>, recorded ${esc(r.date)}` +
+            (r.goal ? ` against the <em>${esc(r.goal)}</em> goal` : "") + ". " +
+            (r.note ? `Your note: ${quote(r.note)}. ` : "") +
+            `The engine keeps it as its own fact and does not quietly count it ` +
+            `towards a target it was never part of.`,
+      sql,
+    }));
+  });
+
   /* Two sources disagreed. The independence split is the whole point and the
    * distinction was learned the hard way on this project: two transcriptions
    * of one instrument agreeing tells you the transcription was faithful, and
@@ -263,6 +354,40 @@ const Narrator = (() => {
         `the copying and not the measurement.`;
     }
     return [{ tone: "note", text, sql }];
+  });
+
+  /* Sits under the weight chart, which now draws each weigh-in by its origin.
+   * The chart shows the pattern; this says what the pattern is, because a
+   * reader who has not been told what a hollow ring means will read it as a
+   * style choice.                                                          */
+  rule("weight-origin", "weight", 30, (q) => {
+    const sql = "SELECT origin, COUNT(*) AS n, SUM(COUNT(*)) OVER () AS total " +
+                "FROM weight WHERE kg IS NOT NULL GROUP BY origin ORDER BY n DESC";
+    const rs = q(sql);
+    if (!rs.length) return [];
+    const unknown = rs.find(r => r.origin === null);
+    const named = rs.filter(r => r.origin !== null);
+    if (!unknown) {
+      return [{
+        tone: "note",
+        text: `Every one of the ${num(rs[0].total)} weigh-ins above names where ` +
+              `it came from: ` +
+              listify(named.map(r => `<code>${esc(r.origin)}</code> ${num(r.n)}`)) + ".",
+        sql,
+      }];
+    }
+    return [{
+      tone: "note",
+      text: `Of the ${num(unknown.total)} weigh-ins above, ${num(unknown.n)} name ` +
+            `no origin at all. The rest name one: ` +
+            listify(named.map(r => `<code>${esc(r.origin)}</code> ${num(r.n)}`)) + ". " +
+            `The hollow rings are the ones whose custody was never written down. ` +
+            `They are not wrong and they are not guesses; nobody recorded how ` +
+            `they reached the record, and that cannot be recovered later. ` +
+            `Drawing them as solid dots would have been this page vouching for ` +
+            `something the record does not.`,
+      sql,
+    }];
   });
 
   /* Where the numbers came from. 162 of 193 rows arriving by unknown transit
@@ -293,7 +418,7 @@ const Narrator = (() => {
   /* G82: the unaccounted period. State that it exists, never ask why. The
    * days a person stops logging are frequently the days worth knowing about,
    * and a tool that demands an explanation is a tool they will stop opening. */
-  rule("unlogged", "record", 22, (q) => {
+  rule("unlogged", "coverage", 22, (q) => {
     // One query, not three. The two side queries this used to run produced
     // numbers the "show the rows" control would not have shown, which is the
     // same defect as inventing them.
@@ -319,7 +444,7 @@ const Narrator = (() => {
 
   /* Weekly verdicts, counted by outcome. no_data is reported as its own
    * category and never folded into a miss: not measuring is not failing.    */
-  rule("verdicts", "record", 23, (q) => {
+  rule("verdicts", "attainment", 23, (q) => {
     const sql = "SELECT verdict, COUNT(*) AS n, SUM(COUNT(*)) OVER () AS total " +
                 "FROM verdicts GROUP BY verdict ORDER BY n DESC";
     const rs = q(sql);
@@ -383,20 +508,44 @@ const Narrator = (() => {
 
   /* ---- stage 2: document planning -------------------------------------- */
 
+  /* Sections carry a MOUNT: where on the page they belong.
+   *
+   * The brief leads with the plan and the arc through it, because that is the
+   * thing a person came to find out. What follows it used to be five more
+   * paragraphs about measurement, sitting hundreds of pixels above the charts
+   * they described - so a sentence about unlogged days and the heatmap that
+   * shows them were never on screen together, and the reader had to hold one
+   * in their head while scrolling to the other. Those now sit under their own
+   * chart, where the sentence and the picture are one thing.
+   *
+   * What stays at the bottom is record-wide: it belongs to no single chart,
+   * so putting it under one would imply a scope it does not have.
+   *
+   * The gate keeps the top. It is not a measurement narrative and not part of
+   * the arc: it is a restriction that is live right now, and a health tool
+   * that renders a safety gate below a goal summary has got its priorities
+   * from a layout grid.                                                     */
   const SECTIONS = [
-    { id: "now",    title: "What needs attention" },
-    { id: "goals",  title: "Against what you said you wanted" },
-    { id: "record", title: "What the record knows about itself" },
+    { id: "now",        mount: "brief",    title: "What needs attention" },
+    { id: "goals",      mount: "brief",    title: "Against what you said you wanted" },
+    { id: "journey",    mount: "brief",    title: "How the plan moved, and why" },
+    { id: "weight",     mount: "c-weight", title: null },
+    { id: "coverage",   mount: "c-heat",   title: null },
+    { id: "attainment", mount: "c-verd",   title: null },
+    { id: "record",     mount: "record",   title: "What the record knows about itself" },
   ];
 
+  /* Returns mount id -> sections, so the page places each group without
+   * needing to know which rule produced what. */
   function plan(messages) {
-    const out = [];
+    const mounts = {};
     for (const s of SECTIONS) {
       const mine = messages.filter(m => m.section === s.id)
                            .sort((a, b) => a.priority - b.priority);
-      if (mine.length) out.push({ ...s, messages: mine });
+      if (!mine.length) continue;
+      (mounts[s.mount] ||= []).push({ ...s, messages: mine });
     }
-    return out;
+    return mounts;
   }
 
   /* ---- driver ----------------------------------------------------------- */
@@ -428,7 +577,8 @@ const Narrator = (() => {
     return plan(messages);
   }
 
-  return { generate, RULES, _internal: { listify, plural, num } };
+  return { generate, RULES, SECTIONS,
+           _internal: { listify, plural, num, count, quantity } };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = Narrator;

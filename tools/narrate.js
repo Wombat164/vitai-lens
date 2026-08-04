@@ -47,10 +47,19 @@ if (contract !== BUILT_AGAINST_CONTRACT) {
  * lose the only signal that a sentence is not the narrator's. */
 const text = (html) => html
   .replace(/<q>/g, '"').replace(/<\/q>/g, '"')
+  .replace(/<span class="chron">/g, "\n")  // the chronology block opens
+  .replace(/<\/span><br\s*\/?>/g, "\n\n")  // and closes, before prose resumes
+  .replace(/<br\s*\/?>/g, "\n")            // its own lines in between
   .replace(/<[^>]+>/g, "")
   .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
 function wrap(s, width = 78, indent = "  ") {
+  // Wrap each hard line separately, so line structure the narrator asked for
+  // survives. Continuation lines hang, which is what makes a chronology read
+  // as a chronology in a terminal.
+  if (s.includes("\n"))
+    return s.split("\n").map((ln, i) =>
+      wrap(ln, width, i === 0 ? indent : indent + "  ")).join("\n");
   const out = [];
   let line = "";
   for (const w of s.split(/\s+/)) {
@@ -62,15 +71,29 @@ function wrap(s, width = 78, indent = "  ") {
   return out.join("\n");
 }
 
-const sections = Narrator.generate(query);
+/* Page order: the brief, then each chart's own note, then the record band.
+ * Chart sections carry no title on the page, because the chart heading is
+ * their title. In a terminal there is no chart, so they borrow one. */
+const CHART_TITLE = {
+  "c-weight": "On the weight chart",
+  "c-heat": "On the daily-steps heatmap",
+  "c-verd": "On the goal-attainment verdicts",
+};
+
+const mounts = Narrator.generate(query);
+const order = ["brief", ...Object.keys(CHART_TITLE), "record"];
+
 console.log(`\nvitai lens brief  (${path.basename(dbPath)}, contract ${contract})`);
-for (const s of sections) {
-  console.log(`\n${s.title.toUpperCase()}`);
-  console.log("-".repeat(s.title.length));
-  for (const m of s.messages) {
-    console.log(wrap(text(m.text)));
-    if (showSql && m.sql) console.log(wrap(m.sql, 78, "      | "));
-    console.log("");
+for (const mount of order) {
+  for (const s of mounts[mount] || []) {
+    const title = s.title || CHART_TITLE[mount] || mount;
+    console.log(`\n${title.toUpperCase()}`);
+    console.log("-".repeat(title.length));
+    for (const m of s.messages) {
+      console.log(wrap(text(m.text)));
+      if (showSql && m.sql) console.log(wrap(m.sql, 78, "      | "));
+      console.log("");
+    }
   }
 }
 db.close();

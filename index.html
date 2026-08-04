@@ -194,6 +194,31 @@
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
   .msg .rows table { font-size: 11.5px; margin-top: 0; }
+  /* A narrative that belongs to one chart, sitting under it. Smaller than the
+     brief, because it is a caption on something the reader can already see,
+     not an argument they have to be walked through. */
+  .chart-note { margin: 12px 0 2px; }
+  .chart-note .msg {
+    font-size: 13.5px; line-height: 1.58; margin: 0;
+    color: var(--ink-2);
+  }
+  .chart-note .msg code { font-size: 11.5px; }
+  /* A date leading a line of chronology. Tabular so the dates form a column
+     the eye can run down, which is most of what makes a list of edits read as
+     a sequence rather than as a paragraph that went wrong. */
+  .msg .when {
+    color: var(--ink-mut); font-variant-numeric: tabular-nums;
+    font-size: 12.5px; margin-right: 3px;
+  }
+  /* The chronology is set apart from the sentences around it. Run at the same
+     indent, its closing line read as one more entry in the list. */
+  .msg .chron {
+    display: block; margin: 7px 0; padding-left: 13px;
+    border-left: 1px solid var(--border);
+  }
+  /* Lines inside a message hang, so a wrapped chronology entry stays visibly
+     part of its own line rather than starting a new one. */
+  .msg { text-wrap: pretty; }
 </style>
 </head>
 <body class="viz-root">
@@ -230,7 +255,8 @@
         by the origin the record gives it - a value whose custody was never
         written down is not the same ink as one a scale measured</p>
       <div class="legend" id="weight-legend"></div>
-      <div id="c-weight"></div></div>
+      <div id="c-weight"></div>
+      <div class="chart-note" id="n-c-weight"></div></div>
     <div class="card"><h2>Weekly distance</h2>
       <p class="hint">every session that recorded a distance, bucketed by the
         engine's own weeks - not runs only</p>
@@ -242,13 +268,20 @@
     <div class="card"><h2>Daily steps</h2>
       <p class="hint">calendar heatmap - the vitality ramp, teal (fewer) to
         lime (more)</p>
-      <div id="c-heat"></div></div>
+      <div id="c-heat"></div>
+      <div class="chart-note" id="n-c-heat"></div></div>
     <div class="card"><h2>Goal-attainment verdicts</h2>
       <p class="hint">= on target &middot; - behind &middot; + ahead &middot;
         dashed ? the engine declined, with its reason &middot; empty outline:
         no row at all</p>
-      <div id="c-verd"></div></div>
+      <div id="c-verd"></div>
+      <div class="chart-note" id="n-c-verd"></div></div>
   </div>
+  <div class="card" id="record-card"><h2>What the record knows about itself</h2>
+    <p class="hint">not about any one measurement, so it sits under all of
+      them: where the numbers came from, where two sources disagreed, and
+      what the log has since changed its mind about</p>
+    <div class="brief" id="record"></div></div>
   <details><summary>Table view (last 30 daily rows)</summary>
     <div id="tableview" style="overflow-x:auto"></div></details>
 </main>
@@ -865,20 +898,47 @@ function refuse(html) {
  * generator is a template engine: a model cannot offer this button, because
  * there is no query that produced the sentence. */
 function brief(db) {
-  const mount = $("#brief");
+  const mounts = Narrator.generate((sql) => rows(db, sql));
+
+  /* Every place a section can land. The narrator decides WHICH of these a
+   * message belongs to; the page only knows where they are. That split is
+   * why a measurement narrative can move next to its chart without the
+   * rules knowing anything about the layout. */
+  const TARGETS = { brief: "#brief", record: "#record",
+                    "c-weight": "#n-c-weight", "c-heat": "#n-c-heat",
+                    "c-verd": "#n-c-verd" };
+
+  for (const [mount, sel] of Object.entries(TARGETS)) {
+    const el = $(sel); if (el) el.innerHTML = "";
+  }
   $("#brief-card").hidden = false;
-  mount.innerHTML = "";
-  const sections = Narrator.generate((sql) => rows(db, sql));
-  if (!sections.length) {
-    mount.innerHTML = '<p class="msg note">The rules found nothing in this ' +
-      'database worth a sentence. That is a real answer and not an error: ' +
-      'a narrator that always has something to say is padding.</p>';
+  const rec = $("#record-card"); if (rec) rec.hidden = !mounts.record;
+
+  if (!Object.keys(mounts).length) {
+    $("#brief").innerHTML = '<p class="msg note">The rules found nothing in ' +
+      'this database worth a sentence. That is a real answer and not an ' +
+      'error: a narrator that always has something to say is padding.</p>';
     return;
   }
+
+  for (const [mount, sections] of Object.entries(mounts)) {
+    const host = $(TARGETS[mount]);
+    if (!host) continue;          // a mount this page does not have: skip it
+    renderSections(db, host, sections, mount === "brief");
+  }
+}
+
+function renderSections(db, mount, sections, withHeadings) {
   for (const s of sections) {
-    const h = document.createElement("h3");
-    h.textContent = s.title;
-    mount.appendChild(h);
+    // Only the brief holds several sections at once, so only the brief needs
+    // headings to tell them apart. Every other mount is a card that already
+    // names itself in its <h2>, and printing the title again there had the
+    // record band announcing itself twice in a row.
+    if (withHeadings && s.title) {
+      const h = document.createElement("h3");
+      h.textContent = s.title;
+      mount.appendChild(h);
+    }
     for (const m of s.messages) {
       const p = document.createElement("p");
       p.className = "msg " + m.tone;
