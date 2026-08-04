@@ -57,6 +57,8 @@ const CANONICAL = {
   "plan-changes": "did i change my plan and why",
   corrections: "has anything been corrected",
   modelled: "what is modelled rather than measured",
+  route: "what route do i run",
+  weather: "what was the weather like",
 };
 
 console.log("\nask\n");

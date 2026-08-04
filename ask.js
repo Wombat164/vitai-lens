@@ -222,6 +222,8 @@ const Ask = (() => {
             "weigh-in - picking a row out, which is allowed where a total is not<br>" +
             "<strong>the plan</strong> how are the goals going, did I change " +
             "my plan and why, how did the weeks score<br>" +
+            "<strong>where and when</strong> what route do I run, what was " +
+            "the weather like, what happened on 2030-06-16<br>" +
             "<strong>safety</strong> am I restricted from anything, did I pass " +
             "the hop test, what injuries do I have<br>" +
             "<strong>the record about itself</strong> where did the numbers " +
@@ -878,6 +880,74 @@ const Ask = (() => {
               "one the engine vouches for. Everything else is unmarked, which " +
               "means nobody said, not that it was measured.",
         sql: [dSql, sSql, wSql],
+      };
+    });
+
+  // NOT "where did": that is the provenance question ("where did the numbers
+  // come from") and this intent stole it. A route question names a route, a
+  // path or a loop; a bare "where" is about custody far more often.
+  intent("route", (q) => has(q, "route", "which way", "what route", "path",
+                             "loop", "circuit", "where do i run",
+                             "where did i run") ? 7 : 0,
+    (q, s, query) => {
+      const sql = "SELECT route, COUNT(*) AS n, MIN(date) AS first, " +
+                  "MAX(date) AS last FROM sessions WHERE route IS NOT NULL " +
+                  "GROUP BY route ORDER BY n DESC";
+      const tSql = "SELECT date, type, distance_km, route, track FROM sessions " +
+                   "WHERE track IS NOT NULL ORDER BY date";
+      const rs = query(sql), tr = query(tSql);
+      if (!rs.length && !tr.length) {
+        return { text: "No session names a route and none carries a track.",
+                 sql: [sql, tSql] };
+      }
+      const unnamed = tr.filter(r => !r.route);
+      return {
+        text: (rs.length
+          ? "The athlete has a name for " + N.derCount(rs.length) + " " +
+            N.plural(rs.length, "route") + ": " + N.listify(rs.map(r =>
+              "<em>" + esc(r.route) + "</em> on " + N.der(r.n) + " " +
+              N.plural(r.n, "session") + " (" + esc(r.first) + " to " +
+              esc(r.last) + ")")) + ". "
+          : "") +
+        N.derCount(tr.length) + " " + N.plural(tr.length, "session") + " " +
+        N.plural(tr.length, "carries", "carry") + " a stored track. " +
+        (unnamed.length
+          ? "One of them has a track and NO route: a place the athlete has no " +
+            "name for, recorded anyway. `route` is a name a person gave " +
+            "somewhere; `track` is the data, and a record where every track " +
+            "has a route has conflated them."
+          : "Every track sits on a named route."),
+        sql: [sql, tSql],
+      };
+    });
+
+  intent("weather", (q) => has(q, "weather", "rain", "rained", "raining",
+                               "wind", "windy", "dry", "wet", "cold", "hot",
+                               "conditions") ? 7 : 0,
+    (q, s, query) => {
+      // SUM(COUNT(*)) OVER (), not rs.reduce. Adding the groups up in the
+      // client makes a number that appears in no row - the same defect the
+      // grounding test caught in the narrator's provenance rule, committed
+      // again here by the same hand a few hours later.
+      const sql = "SELECT weather, COUNT(*) AS n, SUM(COUNT(*)) OVER () AS total " +
+                  "FROM sessions WHERE weather IS NOT NULL " +
+                  "GROUP BY weather ORDER BY n DESC";
+      const dSql = "SELECT date, type, distance_km, route, weather FROM sessions " +
+                   "WHERE weather IS NOT NULL ORDER BY date DESC LIMIT 6";
+      const rs = query(sql), recent = query(dSql);
+      if (!rs.length) {
+        return { text: "No session records the weather. That is an absence in " +
+                       "the record, not a run of fine days.", sql };
+      }
+      return {
+        text: N.der(rs[0].total) + " sessions record the weather: " +
+              N.listify(rs.map(r => "<code>" + esc(r.weather) + "</code> " +
+                N.der(r.n))) + ". Most recently " + N.listify(recent.slice(0, 3)
+                .map(r => esc(r.date) + " <code>" + esc(r.weather) + "</code>" +
+                  (r.route ? " on " + esc(r.route) : ""))) + ". " +
+              "The engine stores what was written down, which is a word and " +
+              "not a measurement - nobody read a thermometer.",
+        sql: [sql, dSql],
       };
     });
 
