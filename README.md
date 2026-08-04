@@ -25,6 +25,11 @@ machine**.
 
 ## What it shows (v0.1)
 
+- **The brief**: the record turned into English, by a template engine and
+  not a language model. Every sentence carries a control that runs the
+  query it came from, so you can disagree with it. See
+  [docs/prior-art.md](docs/prior-art.md) for the lineage this borrows from
+  and why a small model was rejected rather than merely not attempted.
 - Weight: every weigh-in the record holds, positioned by date, with gaps
   drawn as gaps
 - Weekly running distance and sessions per week
@@ -66,7 +71,7 @@ tiles and three of five charts were computed here - and the fix produced
 four new rules and a contract the engine now emits. The lens found them by
 falling into them, which is the cheapest way to find anything.
 
-`meta.contract` compatibility: built against contract `21`, and the page
+`meta.contract` compatibility: built against contract `25`, and the page
 **refuses to render** on a mismatch. Most queries would still resolve
 against a newer contract, so the page would look complete while silently
 dropping whatever that contract added. A client that will not start is a

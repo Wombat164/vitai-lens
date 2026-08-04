@@ -152,6 +152,48 @@
           border-left: 2px solid var(--border); padding: 2px 0 2px 12px;
           margin: 0 0 16px; }
   .note code { font-size: 11.5px; }
+
+  /* The narrator. Deliberately typeset as prose and not as a dashboard: it is
+     making claims in sentences, and sentences are what a reader argues with. */
+  .brief { margin: 0 0 18px; }
+  .brief h3 {
+    font: 600 12px/1 "Outfit", system-ui, sans-serif; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-mut);
+    margin: 22px 0 11px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brief h3:first-child { margin-top: 4px; }
+  .msg {
+    font-size: 14.5px; line-height: 1.62; color: var(--ink-1);
+    margin: 0 0 13px; padding-left: 13px; border-left: 2px solid var(--border);
+  }
+  .msg.stop   { border-left-color: var(--serious); }
+  .msg.watch  { border-left-color: var(--series-2); }
+  .msg.good   { border-left-color: var(--good); }
+  .msg.note   { border-left-color: var(--series-1); }
+  .msg.broken { border-left-color: var(--serious);
+                background: color-mix(in srgb, var(--serious) 7%, transparent); }
+  .msg q  { font-style: italic; color: var(--ink-2); quotes: '"' '"'; }
+  .msg em { color: var(--ink-2); }
+  .msg code {
+    font-size: 12.5px; padding: 1px 5px; border-radius: 4px;
+    background: color-mix(in srgb, var(--ink-1) 6%, transparent);
+  }
+  /* Every sentence can be made to show the rows it came from. This is the
+     entire argument for a template generator, rendered as a button. */
+  .msg .trace {
+    display: block; margin-top: 6px; font-size: 11.5px; color: var(--ink-mut);
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-family: inherit; text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  .msg .trace:hover { color: var(--series-1); }
+  .msg .rows { margin-top: 8px; overflow-x: auto; }
+  .msg .rows pre {
+    margin: 0 0 6px; font-size: 11px; color: var(--ink-mut); white-space: pre-wrap;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .msg .rows table { font-size: 11.5px; margin-top: 0; }
 </style>
 </head>
 <body class="viz-root">
@@ -176,6 +218,12 @@
     <strong>it may not compute</strong> - every number here came out of a table.
     Where a figure is missing, the engine does not emit it, and that is a
     finding rather than a gap in this page. See <code>RULES.md</code>.</p>
+  <div class="card" id="brief-card"><h2>The brief</h2>
+    <p class="hint">generated from the tables below by a template engine, not a
+      language model - every sentence will show you the rows it came from, and
+      <code>docs/prior-art.md</code> argues why a small model was rejected
+      rather than merely not attempted</p>
+    <div class="brief" id="brief"></div></div>
   <div class="cards">
     <div class="card"><h2>Weight</h2>
       <p class="hint">every weigh-in the record holds, positioned by date</p>
@@ -204,6 +252,9 @@
 <div class="tooltip" id="tip"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+<!-- A classic script, not a module: modules are blocked by CORS on file://,
+     and this page is meant to survive being opened straight off a disk. -->
+<script src="narrator.js"></script>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -707,7 +758,7 @@ function tableView(db) {
 // confident-looking subset and gave no sign it was doing so. A client that
 // will not start is a bug report. A client that renders sixty per cent of the
 // truth and looks complete is a lie with a chart on it.
-const BUILT_AGAINST_CONTRACT = "22";
+const BUILT_AGAINST_CONTRACT = "25";
 
 function dbContract(db) {
   try {
@@ -720,9 +771,90 @@ function refuse(html) {
   const note = $("#dropnote");
   note.hidden = false;
   note.innerHTML = html;
-  for (const sel of ["#tiles", "#charts", "#verdicts", "#table"]) {
+  for (const sel of ["#tiles", "#charts", "#verdicts", "#table", "#brief"]) {
     const el = $(sel); if (el) el.innerHTML = "";
   }
+  const bc = $("#brief-card"); if (bc) bc.hidden = true;
+}
+
+/* The narrator's output, with the trace control that makes it checkable.
+ *
+ * The control is not decoration. A generated sentence about someone's body is
+ * worth exactly what its evidence is worth, and the only honest way to ship one
+ * is to hand the reader the rows and let them disagree. This is also why the
+ * generator is a template engine: a model cannot offer this button, because
+ * there is no query that produced the sentence. */
+function brief(db) {
+  const mount = $("#brief");
+  $("#brief-card").hidden = false;
+  mount.innerHTML = "";
+  const sections = Narrator.generate((sql) => rows(db, sql));
+  if (!sections.length) {
+    mount.innerHTML = '<p class="msg note">The rules found nothing in this ' +
+      'database worth a sentence. That is a real answer and not an error: ' +
+      'a narrator that always has something to say is padding.</p>';
+    return;
+  }
+  for (const s of sections) {
+    const h = document.createElement("h3");
+    h.textContent = s.title;
+    mount.appendChild(h);
+    for (const m of s.messages) {
+      const p = document.createElement("p");
+      p.className = "msg " + m.tone;
+      p.innerHTML = m.text;
+      if (m.sql) {
+        const btn = document.createElement("button");
+        btn.className = "trace";
+        btn.textContent = "show the rows this came from";
+        const box = document.createElement("div");
+        box.className = "rows";
+        box.hidden = true;
+        btn.addEventListener("click", () => {
+          if (!box.dataset.filled) {
+            const rs = rows(db, m.sql);
+            const pre = document.createElement("pre");
+            pre.textContent = m.sql;
+            box.appendChild(pre);
+            box.appendChild(rs.length ? tableOf(rs)
+              : Object.assign(document.createElement("p"),
+                  { className: "absent", textContent: "no rows" }));
+            box.dataset.filled = "1";
+          }
+          box.hidden = !box.hidden;
+          btn.textContent = box.hidden ? "show the rows this came from"
+                                       : "hide the rows";
+        });
+        p.appendChild(btn); p.appendChild(box);
+      }
+      mount.appendChild(p);
+    }
+  }
+}
+
+/* Shared by the trace control and the table view. Absence renders as a word,
+ * per the rule that a blank cell reads as zero to everyone who is not looking
+ * for the difference. */
+function tableOf(rs) {
+  const cols = Object.keys(rs[0]);
+  const t = document.createElement("table");
+  const hd = t.createTHead().insertRow();
+  for (const c of cols) {
+    const th = document.createElement("th"); th.textContent = c; hd.appendChild(th);
+  }
+  const tb = t.createTBody();
+  for (const r of rs) {
+    const tr = tb.insertRow();
+    for (const c of cols) {
+      const td = tr.insertCell();
+      if (r[c] === null || r[c] === undefined) {
+        td.innerHTML = '<span class="absent">not recorded</span>';
+      } else {
+        td.textContent = String(r[c]);
+      }
+    }
+  }
+  return t;
 }
 
 function render(db, label) {
@@ -740,6 +872,7 @@ function render(db, label) {
   }
   $("#source-note").textContent = label;
   $("#dropnote").hidden = true;
+  brief(db);
   weightChart(db); weeklyCharts(db); heatmap(db);
   verdictStrip(db); tableView(db);
 }

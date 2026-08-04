@@ -36,6 +36,18 @@ The lens's inability to answer a question is a *finding*. It is the most useful 
 
 **Ordinal quantities are not rendered as cardinals.** Where the engine will vouch for the ordering and not the magnitude, the lens may not print a bare number with a unit and expect the reader to discount it. Readers do not discount.
 
+## The narrator, and the one exception
+
+The lens generates English (`narrator.js`). Prose is where a client is most tempted to compute, because a sentence can smuggle a judgment in a way a chart cannot, so the rule is stated narrowly rather than waived:
+
+> **The narrator may state what the engine stated, and may state how many times the engine stated it. It may not derive a new quantity from the values in the rows.**
+
+Counting is a property of the query, so `COUNT(*)` is allowed. `AVG(kg)` is not, because that is a health judgment, and health judgments belong to the engine where they can be tested. Where the engine has already produced text - `gates.escalation`, `verdicts.reason` - the narrator reproduces it verbatim and never paraphrases, which is the discipline `safety.py` applies when it emits hardcoded escalation strings rather than letting a model phrase them.
+
+Every generated sentence carries the SQL that produced it, and the page renders that as a control which runs the query for real. This is enforced mechanically: `tools/test_narrator.js` extracts every number from every sentence and fails if it cannot be found in the rows that sentence cites. It has already caught the narrator summing group counts into a total, and printing a figure from a second query the citation did not cover. Both read as perfectly honest prose.
+
+**It is not a language model, and that is a decision rather than a limitation.** A model under 10 MB that emits fluent English is available off the shelf; `docs/prior-art.md` sets out the lineage this technique comes from and why the model was rejected. The short version is that a language model cannot be constructed so as to be *unable* to state a number that is not in the record, cannot offer the trace control because no query produced its sentence, and produces exactly the artifact this project exists to prevent: a confident, plausible, unfalsifiable sentence about someone's body.
+
 ## What this repo is not
 
 - **Not a second copy of loadline's stats pane.** Loadline is the product; this is the proof. If the two ever disagree about a number, exactly one of them computed it, and that one is wrong.

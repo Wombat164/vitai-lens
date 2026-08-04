@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  narrator:
+    # The grounding test is the one that matters: it fails if any number in a
+    # generated sentence cannot be found in the rows that sentence cites. A
+    # green run here is the evidence for the claim RULES.md makes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: narrator tests (grounding, citations, realisation)
+        run: node tools/test_narrator.js
+      - name: the brief renders
+        run: node tools/narrate.js
+
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: narrator parses
+        run: node --check narrator.js
+      - name: the page script parses
+        # The page is a single HTML file, so its script is not otherwise
+        # checked by anything until a browser refuses to run it.
+        run: |
+          python3 - <<'PY'
+          import re, pathlib, subprocess, tempfile, sys, os
+          s = pathlib.Path("index.html").read_text(encoding="utf-8")
+          blocks = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', s, re.S)
+          if not blocks:
+              sys.exit("no inline script found in index.html")
+          f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
+          f.write(blocks[-1]); f.close()
+          r = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
+          os.unlink(f.name)
+          if r.returncode:
+              sys.exit(r.stderr)
+          print("page script parses")
+          PY
+
+  ascii:
+    # House style: ASCII only, and never the double-hyphen separator.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          bad = []
+          for p in list(pathlib.Path(".").rglob("*.md")) + \
+                   list(pathlib.Path(".").rglob("*.js")) + \
+                   [pathlib.Path("index.html")]:
+              if ".git" in p.parts:
+                  continue
+              t = p.read_text(encoding="utf-8")
+              for i, line in enumerate(t.splitlines(), 1):
+                  if any(ord(c) > 127 for c in line):
+                      bad.append(f"{p}:{i}: non-ASCII")
+                  if " -- " in line:
+                      bad.append(f"{p}:{i}: double-hyphen separator")
+          if bad:
+              print("\n".join(bad)); sys.exit(1)
+          print("ascii clean")
+          PY
