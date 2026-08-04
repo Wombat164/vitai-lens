@@ -15,6 +15,7 @@ const db = new DatabaseSync(path.join(__dirname, "..", "demo", "health.db"),
 const query = (sql) => db.prepare(sql).all();
 
 const strip = (h) => h.replace(/<q>/g, '"').replace(/<\/q>/g, '"')
+  .replace(/<br\s*\/?>/g, "\n")
   .replace(/<[^>]+>/g, "").replace(/&amp;/g, "&")
   .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 

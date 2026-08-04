@@ -51,6 +51,11 @@ const Ask = (() => {
   const cap = (s) => s.replace(/^(<[^>]+>)*[a-z]/,
     m => m.slice(0, -1) + m.slice(-1).toUpperCase());
 
+  // The single place a value becomes part of a query. Only ever called with a
+  // session type from a fixed map, a goal slug read out of the database, or a
+  // date matched by regex - never with raw question text.
+  const sqlStr = (v) => "'" + String(v).replace(/'/g, "''") + "'";
+
   /* ---- the lexicon ------------------------------------------------------
    * Words to schema. Kept as data rather than buried in regexes so that what
    * this thing understands is a list somebody can read and extend, and so the
@@ -102,6 +107,65 @@ const Ask = (() => {
     return out;
   }
 
+  /* ---- qualifiers -------------------------------------------------------
+   *
+   * The failure four test athletes found, over and over, was not a wrong
+   * number and not a refusal. It was a CONFIDENT PARAGRAPH ABOUT A DIFFERENT
+   * QUESTION. "how many runs did I do in June" returned every run from April
+   * onward. "how much did I walk last week" answered about the whole record.
+   * "what is my longest run" returned a session count. Every one read as an
+   * answer, none was flagged, and RULES.md promises that when this thing
+   * misses it misses visibly.
+   *
+   * The cause: intents scored on keywords alone. "runs" matched `sessions`
+   * and "in June" was never looked at, so the qualifier that made the question
+   * a different question was silently dropped.
+   *
+   * So qualifiers are extracted separately from intent, and an intent that
+   * cannot honour a qualifier present in the question REFUSES rather than
+   * answering the question it can handle. A dropped qualifier is a miss, and
+   * a miss must be visible.
+   */
+  const MONTHS = ["january", "february", "march", "april", "may", "june",
+                  "july", "august", "september", "october", "november",
+                  "december"];
+
+  const MONTH_RE = /\b(january|february|march|april|june|july|august|september|october|november|december)\b/;
+  const SUPERLATIVE_RE = /\b(longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak|record)\b/;
+  const COMPARISON_RE = /\b(compare|compared|versus|vs|better than|worse than|more than|less than)\b/;
+  const AGGREGATE_RE = /\b(total|totals|altogether|average|averages|mean|sum|per week|typical)\b/;
+  const RELATIVE = ["last week", "this week", "past week", "last month",
+                    "this month", "last year", "this year", "yesterday",
+                    "today", "recently", "lately", "so far", "last 7 days",
+                    "last 30 days"];
+
+  function qualifiers(q) {
+    const out = { window: null, superlative: null, comparison: false,
+                  aggregate: null };
+    for (const w of RELATIVE) {
+      if (q.includes(w)) { out.window = w; break; }
+    }
+    // Regex LITERALS, not `new RegExp` over a template string. Written the
+    // other way the `\b` and `\s` inside the template are consumed by the
+    // string before the regex ever sees them - `\b` becomes a backspace
+    // character - and every month silently stopped matching. Found by testing
+    // "in June", not by reading it.
+    if (!out.window) {
+      const m = q.match(MONTH_RE);
+      if (m) out.window = m[1];
+      // "may" is a modal verb far more often than a month, and "may I run" is
+      // not a question about May, so it needs a preposition in front of it.
+      else if (/\b(in|during|for|across)\s+may\b/.test(q)) out.window = "may";
+    }
+    if (!out.window && /\bweek of\b/.test(q)) out.window = "a named week";
+    const sup = q.match(SUPERLATIVE_RE);
+    if (sup) out.superlative = sup[1];
+    out.comparison = COMPARISON_RE.test(q);
+    const agg = q.match(AGGREGATE_RE);
+    if (agg) out.aggregate = agg[1];
+    return out;
+  }
+
   /* Goal slugs and titles come from the database, not from a hardcoded list,
    * so a record with different goals is askable about ITS goals. */
   function matchGoal(q, query) {
@@ -140,21 +204,34 @@ const Ask = (() => {
    * otherwise with weights would only make it harder to predict. */
 
   const INTENTS = [];
-  const intent = (id, score, run) => INTENTS.push({ id, score, run });
+  // `handles` names the qualifiers an intent can honour. Anything not listed
+  // is refused when present rather than dropped.
+  const intent = (id, score, run, handles) =>
+    INTENTS.push({ id, score, run, handles: handles || {} });
 
   const has = (q, ...words) => words.some(w => new RegExp(`\\b${w}`).test(q));
 
   intent("help", (q) => has(q, "what can you", "help", "which questions",
                             "what do you know", "capabilities") ? 9 : 0,
     () => ({
-      text: "I answer from the tables in this database and nothing else. Things " +
-            "I can do: <em>what do they weigh</em>, <em>how are their goals " +
-            "going</em>, <em>how many runs</em>, <em>what happened on " +
-            "2030-06-16</em>, <em>where did the weight come from</em>, " +
-            "<em>did any sources disagree</em>, <em>are they restricted from " +
-            "anything</em>, <em>which days are missing</em>. " +
-            "Ask in your own words. If I do not understand, I will say so " +
-            "rather than produce something that reads like an answer.",
+      text: "I answer from the tables in this database and nothing else." +
+            "<span class=\"chron\">" +
+            "<strong>the record</strong> what do they weigh, how did they " +
+            "sleep, how has their mood been, what happened on 2030-06-16<br>" +
+            "<strong>extremes</strong> longest run, hardest session, heaviest " +
+            "weigh-in - picking a row out, which is allowed where a total is not<br>" +
+            "<strong>the plan</strong> how are the goals going, did I change " +
+            "my plan and why, how did the weeks score<br>" +
+            "<strong>safety</strong> am I restricted from anything, did I pass " +
+            "the hop test, what injuries do I have<br>" +
+            "<strong>the record about itself</strong> where did the numbers " +
+            "come from, did any sources disagree, what is modelled rather than " +
+            "measured, has anything been corrected, which days are missing" +
+            "</span>" +
+            "What I will not do: judge, predict, or explain why something " +
+            "happened. I also will not scope an answer to a window I cannot " +
+            "honour, or total anything up - and where I cannot, I say so " +
+            "rather than answering a nearby question instead.",
       sql: null,
     }));
 
@@ -163,21 +240,80 @@ const Ask = (() => {
     (q, s, query) => {
       const sql = "SELECT date, slug, restricts, reason, severity, status, " +
                   "precondition, escalation FROM gates WHERE status <> 'cleared'";
+      /* THE LATEST ROW PER SLUG, not every unresolved row. `medical` is
+       * effective-dated: the calf strain has an `active` row on 2030-04-17
+       * and a `resolved` row on 2030-05-09, and taking all non-resolved rows
+       * reported a restriction that had been lifted seven weeks earlier.
+       * Warning someone off running because of a healed injury is a different
+       * failure from missing a live one, and still a failure. */
+      const medSql = "SELECT date, slug, kind, title, body_site, severity, " +
+                     "status, restricts, onset_date FROM medical m " +
+                     "WHERE date = (SELECT MAX(date) FROM medical " +
+                     "WHERE slug = m.slug) " +
+                     "AND restricts IS NOT NULL AND status <> 'resolved'";
       const rs = query(sql);
-      if (!rs.length) {
-        return { text: "Nothing is gated. The engine has no open restriction " +
-                       "on this record right now, which is a statement about " +
-                       "what it was told, not a clearance.", sql };
+      const med = query(medSql);
+      if (!rs.length && !med.length) {
+        return {
+          text: "No gate is open and no unresolved medical row carries a " +
+                "restriction. That is a statement about what the engine was " +
+                "told, not a clearance - and this page cannot clear anybody.",
+          sql: [sql, medSql],
+        };
       }
-      const g = rs[0];
-      return {
-        text: `Yes: <strong>${esc(g.restricts)}</strong> work is gated, from ` +
-              `${esc(g.date)}. The engine's own words, not a paraphrase: ` +
-              `<q>${esc(g.escalation)}</q> The condition it set is ` +
-              `<code>${esc(g.precondition)}</code> and it currently reads ` +
-              `<code>${esc(g.status)}</code>.`,
-        sql,
-      };
+      /* NEVER OPEN WITH AN AFFIRMATIVE PARTICLE.
+       *
+       * This used to begin "Yes:" - written for "is anything gated", and read
+       * by an athlete who asked "can I run today?". The content was right and
+       * the first word inverted it, on the one question where a lexical
+       * mislead is unaffordable. A restriction is now stated as a restriction,
+       * in the first three words, whatever the question's grammar. */
+      const parts = rs.map(g => {
+        // The gate names a precondition; the check history for that
+        // precondition is the thing the athlete needs and could not reach.
+        // A run of passes with a failure inside it is not the same as a run
+        // of passes, and only one of those is safe to act on.
+        const cSql = "SELECT date, slug, result, value, note FROM checks " +
+                     `WHERE slug = '${String(g.precondition).replace(/'/g, "''")}' ` +
+                     "ORDER BY date DESC LIMIT 5";
+        let checks = [];
+        try { checks = query(cSql); } catch { checks = []; }
+        const fails = checks.filter(c => c.result !== "pass");
+        let t = `<strong>${esc(g.restricts)} work is gated</strong>, from ` +
+                `${esc(g.date)}, severity <code>${esc(g.severity)}</code>. ` +
+                `The engine's own words, not a paraphrase: ` +
+                `<q>${esc(g.escalation)}</q> The condition it set is ` +
+                `<code>${esc(g.precondition)}</code>, currently ` +
+                `<code>${esc(g.status)}</code>.`;
+        if (checks.length) {
+          t += ` Recent <code>${esc(g.precondition)}</code> results: ` +
+               N.listify(checks.map(c =>
+                 `${esc(c.date)} <strong>${esc(c.result)}</strong>` +
+                 (c.note ? ` (${esc(c.note)})` : ""))) + ".";
+          if (fails.length) {
+            t += ` <strong>Note the ${fails.length === 1 ? "failure" : "failures"}.</strong> ` +
+                 `A run of passes with a failure inside it is not a run of ` +
+                 `passes, and clearing this gate on today's result alone would ` +
+                 `mean not knowing that.`;
+          }
+        }
+        return { t, cSql };
+      });
+      let text = parts.map(x => x.t).join("<br>");
+      if (rs.length > 1) {
+        text = `${N.derCount(rs.length)} gates are open.<br>` + text;
+      }
+      if (med.length) {
+        text += `<br>Separately, the medical record carries ` +
+                `${N.derCount(med.length)} unresolved ` +
+                `${N.plural(med.length, "entry", "entries")} with a ` +
+                `restriction of ${N.listify(med.map(m =>
+                  `<code>${esc(m.restricts)}</code> for ${esc(m.title)}` +
+                  (m.onset_date ? `, onset ${esc(m.onset_date)}` : "")))}. ` +
+                `Those are a different table from the gates and do not all ` +
+                `produce one.`;
+      }
+      return { text, sql: [sql, medSql, ...parts.map(x => x.cSql)] };
     });
 
   intent("weight", (q, s) => (s.metric === "kg" ? 5 : 0) +
@@ -388,7 +524,12 @@ const Ask = (() => {
       const rs = query(sql);
       if (!rs.length) return { text: "The record carries no provenance rows.", sql };
       return {
-        text: `Across ${N.der(rs[0].total, "record-days")}: ` +
+        // NOT "record-days". This is the provenance table's row count across
+        // several datasets - 193 rows over 84 days in the demo - and calling
+        // them days inflated the record 2.3x while the coverage answer said
+        // 84 in the same session. Honest numbers, invented noun.
+        text: `Across ${N.der(rs[0].total, "provenance rows")} (one per dated ` +
+              `row in each dataset, not one per day): ` +
               N.listify(rs.map(r => `<code>${esc(r.trust)}</code> ${N.der(r.n)}`)) +
               `. ` + (rs[0].trust === "unknown-transit"
                 ? `The largest group is the one where the number arrived and the ` +
@@ -465,6 +606,281 @@ const Ask = (() => {
       };
     });
 
+  /* ---- SELECTION IS NOT COMPUTATION -------------------------------------
+   *
+   * Four test athletes all asked for a longest run, a heaviest weight, a
+   * hardest session, and all four got a session count back. The refusal was
+   * on-rule as the rule was WRITTEN - "may not derive a new quantity" - and
+   * the rule was stricter than it needed to be.
+   *
+   * MAX picks a row. The number it returns already exists in the record and
+   * nobody computed it. SUM and AVG produce a number that appears in no row,
+   * and that is the line. "The latest weigh-in" was always allowed and is the
+   * same operation with a different ORDER BY.
+   *
+   * The grounding test already encoded the better rule: every number in an
+   * answer must be findable in the rows the answer cites. MAX passes that
+   * automatically; SUM cannot. The prose rule has been brought into line with
+   * the test rather than the other way round.
+   */
+  const EXTREMES = {
+    longest:  { t: "sessions", col: "distance_km", dir: "DESC", unit: "km", word: "longest" },
+    shortest: { t: "sessions", col: "distance_km", dir: "ASC",  unit: "km", word: "shortest" },
+    biggest:  { t: "sessions", col: "distance_km", dir: "DESC", unit: "km", word: "biggest" },
+    largest:  { t: "sessions", col: "distance_km", dir: "DESC", unit: "km", word: "largest" },
+    hardest:  { t: "sessions", col: "rpe", dir: "DESC", unit: null, word: "hardest by recorded effort" },
+    easiest:  { t: "sessions", col: "rpe", dir: "ASC",  unit: null, word: "easiest by recorded effort" },
+    heaviest: { t: "weight", col: "kg", dir: "DESC", unit: "kg", word: "heaviest" },
+    lightest: { t: "weight", col: "kg", dir: "ASC",  unit: "kg", word: "lightest" },
+  };
+
+  intent("extremum", (q) => {
+    const m = q.match(SUPERLATIVE_RE);
+    return (m && EXTREMES[m[1]]) ? 8 : 0;
+  }, (q, s, query) => {
+    const e = EXTREMES[q.match(SUPERLATIVE_RE)[1]];
+    const typeFilter = (e.t === "sessions" && s.sessionType)
+      ? " AND type = " + sqlStr(s.sessionType) : "";
+    const cols = e.t === "sessions"
+      ? "date, type, distance_km, duration_s, avg_hr, rpe, note"
+      : "date, kg, origin, source, note";
+    const sql = "SELECT " + cols + " FROM " + e.t + " WHERE " + e.col +
+                " IS NOT NULL" + typeFilter + " ORDER BY " + e.col + " " +
+                e.dir + " LIMIT 1";
+    const r = query(sql)[0];
+    if (!r) {
+      return { text: "No row in <code>" + esc(e.t) + "</code> carries a " +
+                     "<code>" + esc(e.col) + "</code>, so there is nothing to " +
+                     "pick from.", sql };
+    }
+    const val = N.rec(r[e.col], e.unit, e.col === "distance_km" ? 2 : 1);
+    const what = e.t === "sessions"
+      ? "a <code>" + esc(r.type) + "</code> on " + esc(r.date)
+      : "a weigh-in on " + esc(r.date);
+    return {
+      text: "The " + esc(e.word) + (s.sessionType ? " " + esc(s.sessionType) : "") +
+            " in the record is " + what + ", at " + val + "." +
+            (r.rpe !== null && r.rpe !== undefined && e.col !== "rpe"
+              ? " Effort " + N.rec(r.rpe) + " by his own judgment." : "") +
+            (r.note ? " The note reads <q>" + esc(r.note) + "</q>" : "") +
+            " This is a row picked out, not a figure computed. Selecting the " +
+            "largest is the same operation as selecting the latest, which is " +
+            "why it is allowed where a total is not.",
+      sql,
+    };
+  }, { superlative: true });
+
+  /* One handler for the daily metrics nobody could reach. Sleep was named in
+   * the help text as a thing to ask about, and asking about it refused - the
+   * tool's own instruction failed. */
+  const DAILY_METRIC = {
+    sleep_h: { words: ["sleep", "slept", "sleeping"], unit: "h", dp: 1, label: "sleep" },
+    rhr: { words: ["resting", "rhr", "pulse"], unit: "bpm", dp: 0, label: "resting heart rate" },
+    mood: { words: ["mood", "happy", "happiness"], unit: null, dp: 0, label: "mood" },
+    pain: { words: ["pain", "sore", "hurts"], unit: null, dp: 0, label: "pain" },
+    steps: { words: ["step", "steps"], unit: "steps", dp: 0, label: "steps" },
+    active_min: { words: ["active minutes"], unit: "min", dp: 0, label: "active minutes" },
+    kcal_in: { words: ["ate", "eating", "calories", "kcal", "intake"], unit: "kcal", dp: 0, label: "intake" },
+  };
+
+  function metricOf(q) {
+    for (const col of Object.keys(DAILY_METRIC)) {
+      const m = DAILY_METRIC[col];
+      if (m.words.some(w => new RegExp("\\b" + w).test(q))) return [col, m];
+    }
+    return null;
+  }
+
+  intent("daily-metric", (q) => metricOf(q) ? 5 : 0, (q, s, query) => {
+    const found = metricOf(q);
+    const col = found[0], m = found[1];
+    // Latest, lowest and highest are three row selections, which is what this
+    // page may do. No mean and no trend: those belong to the engine.
+    const sql = "SELECT date, " + col + " FROM daily WHERE " + col +
+                " IS NOT NULL ORDER BY date DESC LIMIT 1";
+    const loSql = "SELECT date, " + col + " FROM daily WHERE " + col +
+                  " IS NOT NULL ORDER BY " + col + " ASC, date LIMIT 1";
+    const hiSql = "SELECT date, " + col + " FROM daily WHERE " + col +
+                  " IS NOT NULL ORDER BY " + col + " DESC, date LIMIT 1";
+    const nSql = "SELECT COUNT(*) AS n FROM daily WHERE " + col + " IS NOT NULL";
+    const last = query(sql)[0], lo = query(loSql)[0], hi = query(hiSql)[0],
+          n = query(nSql)[0];
+    if (!last) {
+      return { text: "The record carries no <code>" + esc(col) + "</code>.", sql };
+    }
+    const f = (r) => N.rec(r[col], m.unit, m.dp);
+    const subjective = col === "mood" || col === "pain";
+    return {
+      text: cap(esc(m.label)) + " is recorded on " + N.der(n.n, "days") +
+            ". The last is " + f(last) + " on " + esc(last.date) +
+            "; the lowest " + f(lo) + " on " + esc(lo.date) +
+            " and the highest " + f(hi) + " on " + esc(hi.date) + ". " +
+            (subjective
+              ? "That is his own account rather than anything measured of him, " +
+                "and the engine declares no scale for it, so the numbers order " +
+                "but do not convert."
+              : "Three rows, picked out. I will not average them: a mean is a " +
+                "number that appears in no row, and the engine emits none."),
+      sql: [sql, loSql, hiSql, nSql],
+    };
+  });
+
+  /* The gate names a precondition. Its history was unreachable, and one of
+   * the three results in this record is a failure. */
+  intent("checks", (q) => has(q, "hop test", "hop-test", "check", "did i pass",
+                              "precondition") ? 7 : 0,
+    (q, s, query) => {
+      const sql = "SELECT date, slug, result, value, note FROM checks " +
+                  "ORDER BY date DESC";
+      const rs = query(sql);
+      if (!rs.length) return { text: "The record holds no checks.", sql };
+      const fails = rs.filter(r => r.result !== "pass");
+      return {
+        text: N.derCount(rs.length) + " " + N.plural(rs.length, "check") +
+              " recorded: " + N.listify(rs.map(r =>
+                esc(r.date) + " <code>" + esc(r.slug) + "</code> <strong>" +
+                esc(r.result) + "</strong>" +
+                (r.note ? " (" + esc(r.note) + ")" : ""))) + ". " +
+              (fails.length
+                ? cap(N.derCount(fails.length)) + " did not pass. A later pass " +
+                  "does not retract an earlier failure, and a gate cleared on " +
+                  "today's result alone is cleared without knowing that."
+                : "All passed."),
+        sql,
+      };
+    });
+
+  intent("injuries", (q) => has(q, "injur", "achilles", "calf", "ankle",
+                                "knee", "strain", "physio", "medical",
+                                "diagnos") ? 7 : 0,
+    (q, s, query) => {
+      const sql = "SELECT date, slug, kind, title, body_site, severity, " +
+                  "status, restricts, onset_date FROM medical ORDER BY date";
+      const curSql = "SELECT slug, title, body_site, severity, status, " +
+                     "restricts, onset_date FROM medical m WHERE date = " +
+                     "(SELECT MAX(date) FROM medical WHERE slug = m.slug)";
+      const rs = query(sql), cur = query(curSql);
+      if (!rs.length) return { text: "The medical record is empty.", sql };
+      const open = cur.filter(r => r.status !== "resolved");
+      return {
+        text: "The medical record holds " + N.derCount(rs.length) + " entries " +
+              "across " + N.derCount(cur.length) + " " +
+              N.plural(cur.length, "issue") + ". Where each stands now: " +
+              N.listify(cur.map(r =>
+                "<em>" + esc(r.title) + "</em> (" + esc(r.body_site) +
+                ", <strong>" + esc(r.status) + "</strong>" +
+                (r.onset_date ? ", onset " + esc(r.onset_date) : "") +
+                (r.restricts ? ", restricts <code>" + esc(r.restricts) + "</code>" : "") +
+                ")")) + ". " +
+              (open.length
+                ? cap(N.derCount(open.length)) + " " +
+                  N.plural(open.length, "is", "are") + " not resolved."
+                : "None is open.") +
+              " These are effective-dated: the latest row for an issue is where " +
+              "it stands, and the earlier rows are its history rather than " +
+              "separate problems.",
+        sql: [sql, curSql],
+      };
+    });
+
+  /* Answers "why did I change it" from a RECORDED reason. Scores above the
+   * causation veto's trigger because that veto is about INFERRING a cause;
+   * this is reading one the athlete wrote down. */
+  intent("plan-changes", (q) => has(q, "change", "changed", "edit", "edited",
+                                    "moved the", "adjust", "churn",
+                                    "suspicious", "loosen", "tighten") ? 8 : 0,
+    (q, s, query) => {
+      const sql = "SELECT date, slug, kind, metric, before, after, direction, " +
+                  "deadline_pushed, reason, set_by, suspicious, unexplained " +
+                  "FROM plan_churn ORDER BY date";
+      const rs = query(sql);
+      if (!rs.length) return { text: "The plan has not been edited.", sql };
+      const flagged = rs.filter(r => r.suspicious);
+      const lines = rs.map(r =>
+        "<span class=\"when\">" + esc(r.date) + "</span> " +
+        (r.kind === "threshold"
+          ? "the <code>" + esc(r.slug) + "</code> threshold"
+          : "<em>" + esc(r.slug) + "</em>") + " " +
+        (r.before !== null && r.after !== null && r.before !== r.after
+          ? esc(r.direction) + " from " + N.rec(r.before) + " to " + N.rec(r.after)
+          : (r.deadline_pushed ? "kept its target and moved its deadline"
+                               : esc(r.direction))) +
+        (r.reason ? ": <q>" + esc(r.reason) + "</q>" : ""));
+      return {
+        text: "The plan moved " + N.derCount(rs.length) + " " +
+              N.plural(rs.length, "time") + ", and the record kept a reason " +
+              "each time." +
+              "<span class=\"chron\">" + lines.join("<br>") + "</span>" +
+              (flagged.length
+                ? "The engine flagged " + N.derCount(flagged.length) + " of " +
+                  "those, a loosened threshold, which it flags on principle. " +
+                  "It is a flag and not an accusation, and the reason given at " +
+                  "the time is in the record above."
+                : "None was flagged."),
+        sql,
+      };
+    });
+
+  intent("corrections", (q) => has(q, "correct", "supersede", "retract",
+                                   "typo", "amend") ? 7 : 0,
+    (q, s, query) => {
+      const gSql = "SELECT date, slug, title, change_kind, reason FROM goals " +
+                   "WHERE change_kind = 'correction'";
+      const cSql = "SELECT claim_id, dataset, date, source, merged_into " +
+                   "FROM claims WHERE merged_into IS NOT NULL";
+      const g = query(gSql), c = query(cSql);
+      if (!g.length && !c.length) {
+        return { text: "Nothing in the record is marked a correction and no " +
+                       "claim has been superseded.", sql: [gSql, cSql] };
+      }
+      let t = "";
+      if (g.length) {
+        t += N.derCount(g.length) + " policy " + N.plural(g.length, "line") +
+             " " + N.plural(g.length, "is", "are") + " marked a correction: " +
+             N.listify(g.map(r => "<em>" + esc(r.title || r.slug) + "</em>" +
+               (r.reason ? " - <q>" + esc(r.reason) + "</q>" : ""))) + ". " +
+             "A correction asserts the retired line was never a real intention, " +
+             "so it is kept out of the plan-stability count on purpose. ";
+      }
+      if (c.length) {
+        t += cap(N.derCount(c.length)) + " " + N.plural(c.length, "claim") +
+             " " + N.plural(c.length, "was", "were") + " superseded by a later " +
+             "one. The originals are still in the log.";
+      }
+      return { text: t, sql: [gSql, cSql] };
+    });
+
+  intent("modelled", (q) => has(q, "modelled", "modeled", "estimated",
+                                "rather than measured", "computed rather") ? 7 : 0,
+    (q, s, query) => {
+      const dSql = "SELECT date, modelled FROM daily WHERE modelled IS NOT NULL";
+      const sSql = "SELECT date, type, modelled FROM sessions WHERE modelled IS NOT NULL";
+      const wSql = "SELECT date, modelled FROM weight WHERE modelled IS NOT NULL";
+      const d = query(dSql), ss = query(sSql), w = query(wSql);
+      const total = d.length + ss.length + w.length;
+      if (!total) {
+        return { text: "No row in this record is marked modelled. That means " +
+                       "nothing declares itself computed rather than observed, " +
+                       "not that everything was measured.",
+                 sql: [dSql, sSql, wSql] };
+      }
+      const bits = [];
+      if (d.length) bits.push("<code>daily</code> on " +
+        N.listify(d.map(r => esc(r.date) + " (" + esc(r.modelled) + ")")));
+      if (ss.length) bits.push("<code>sessions</code> on " +
+        N.listify(ss.map(r => esc(r.date) + " (" + esc(r.modelled) + ")")));
+      if (w.length) bits.push("<code>weight</code> on " +
+        N.listify(w.map(r => esc(r.date) + " (" + esc(r.modelled) + ")")));
+      return {
+        text: N.derCount(total) + " " + N.plural(total, "row") + " " +
+              N.plural(total, "declares", "declare") + " a modelled field: " + N.listify(bits) + ". The named field on those " +
+              "rows was computed rather than observed, so the magnitude is not " +
+              "one the engine vouches for. Everything else is unmarked, which " +
+              "means nobody said, not that it was measured.",
+        sql: [dSql, sSql, wSql],
+      };
+    });
+
   /* ---- vetoes ------------------------------------------------------------
    * A question can contain a keyword this thing recognises and still be asking
    * for something it must not supply. Two got through and both were caught by
@@ -488,7 +904,13 @@ const Ask = (() => {
   const VETOES = [
     {
       id: "judgment",
-      test: (q) => has(q, "good", "bad", "better", "worse", "should", "ought",
+      // "is the scale reliable" was answered with a provenance histogram,
+      // which reads as a reliability verdict. `reliable` is a scoring keyword
+      // for that intent and was missing here, so the veto leaked on the most
+      // natural phrasing a sceptic uses.
+      test: (q) => has(q, "reliable", "unreliable", "accurate", "inaccurate",
+                       "trustworthy", "good", "bad", "better", "worse",
+                       "should", "ought",
                        "advice", "advise", "recommend", "suggest", "optimal",
                        "healthy", "enough", "too much", "too little", "right",
                        "wrong", "improve", "fix"),
@@ -512,8 +934,16 @@ const Ask = (() => {
     },
     {
       id: "causation",
+      // EXEMPTION: a "why" about a PLAN EDIT is not asking the engine to infer
+      // a cause, it is asking to read a reason the athlete wrote down at the
+      // time. `plan_churn.reason` holds exactly that. Blocking "did I change
+      // my goals and why" refused a retrieval and lectured about causality,
+      // which two test athletes hit independently.
       test: (q) => has(q, "why", "because", "cause", "reason for", "due to",
-                       "explain why", "what made"),
+                       "explain why", "what made") &&
+                   !has(q, "change", "changed", "edit", "edited", "adjust",
+                        "loosen", "tighten", "moved the", "correct", "plan",
+                        "goal", "target", "threshold"),
       text: "That asks why, and the record holds what, not why. A cause is a " +
             "claim - the engine treats causal attribution as something to be " +
             "asserted by a person and recorded, never derived from a " +
@@ -558,6 +988,47 @@ const Ask = (() => {
               "sleep, runs, goals - or a date like <code>2030-06-16</code>.",
         sql: null,
         matched: null,
+      };
+    }
+    /* A qualifier the winner cannot honour is a miss, and a miss is a
+     * refusal. Answering the un-qualified version of the question is the one
+     * behaviour this design exists to prevent. */
+    const qual = qualifiers(q);
+    const h = best.handles || {};
+    const blocked =
+      (qual.window && !h.window
+        ? { what: `the time window <em>${esc(qual.window)}</em>`,
+            why: "I can count rows in a window, but this answer is not one " +
+                 "that scopes - so rather than quietly report the whole " +
+                 "record and let it read as your week, I am stopping here." }
+      : qual.superlative && !h.superlative
+        ? { what: `<em>${esc(qual.superlative)}</em>`,
+            why: "Picking out the largest or the best means selecting a row, " +
+                 "which this answer does not do. It would have given you a " +
+                 "count or a total instead, which is not what you asked." }
+      : qual.comparison
+        ? { what: "a comparison",
+            why: "Comparing two periods means computing a difference, and a " +
+                 "difference is a number this page would have made up. The " +
+                 "engine emits no period comparison; that is a gap in the " +
+                 "engine, and the honest thing is to say so rather than " +
+                 "subtract two figures and present the result as a finding." }
+      : qual.aggregate && !h.aggregate
+        ? { what: `<em>${esc(qual.aggregate)}</em>`,
+            why: "A total or an average is a number that appears in no row. " +
+                 "Counting rows is fine and this page does it; adding up the " +
+                 "values inside them is arithmetic the engine has not done " +
+                 "and has not tested." }
+      : null);
+    if (blocked) {
+      return {
+        kind: "refusal", refusal: "qualifier", matched: best.id, sql: null,
+        text: `Your question asks for ${blocked.what}, and I cannot honour ` +
+              `that here. ${blocked.why}<br>` +
+              `I did recognise the rest of it and would have answered as ` +
+              `<code>${esc(best.id)}</code>. Ask it without the qualifier and ` +
+              `you will get that answer, scoped to the whole record and ` +
+              `labelled as such.`,
       };
     }
     let out;

@@ -92,6 +92,22 @@ The test for adding a mark: **does confusing the two lead a reader to a wrong co
 
 `ask.js` takes a typed question and answers it in prose. It runs on the same rule as the narrator, with the same trace control, and it is deliberately built to look like the chat box everyone already knows - because the point is that it looks like one and behaves differently at the edges.
 
+### Selection is not computation
+
+The rule was first written as "may not derive a new quantity", and that was stricter than it needed to be. Four test athletes each asked for a longest run, a heaviest weigh-in, a hardest session; each got a session count back.
+
+`MAX` picks a row. The number it returns already exists in the record and nobody computed it. `SUM` and `AVG` produce a number that appears in no row, and that is the line. "The latest weigh-in" was always allowed, and selecting the largest is the same operation with a different `ORDER BY`.
+
+The grounding test already encoded the better rule - *every number in an answer must be findable in the rows the answer cites* - which `MAX` passes automatically and `SUM` cannot. The prose rule was brought into line with the test rather than the other way round.
+
+### A dropped qualifier is a miss, and a miss must be visible
+
+The worst defect the athletes found was not a wrong number or a refusal. It was **a confident paragraph about a different question**: "how many runs did I do in June" returned every run since April, "how much did I walk last week" answered about the whole record, and nothing flagged either.
+
+Intents scored on keywords alone, so the qualifier that made the question a different question was never looked at. Qualifiers - time windows, superlatives, comparisons, aggregates - are now extracted separately, each intent declares which it can honour, and **an intent that cannot honour a qualifier present in the question refuses instead of answering the question it can handle**.
+
+That is the difference between "it misses visibly" being a claim and being true.
+
 It maps a question onto a **fixed set of parameterised queries** and refuses anything that does not map. No SQL is ever built from user text. That refusal is not a limitation to be engineered away later; it is the property that makes the answers worth reading, and it follows PRECISE (2003), which found that characterising the tractable subset and declining the rest is what made an NL database interface trustworthy.
 
 Three classes are refused **by name**, before any matching happens, however well their words fit an intent:

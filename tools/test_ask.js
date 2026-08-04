@@ -50,6 +50,13 @@ const CANONICAL = {
   conflicts: "did any sources disagree",
   coverage: "which days are missing",
   verdicts: "how did the weeks score",
+  extremum: "what is my longest run",
+  "daily-metric": "how did i sleep",
+  checks: "did i pass the hop test",
+  injuries: "what injuries do i have",
+  "plan-changes": "did i change my plan and why",
+  corrections: "has anything been corrected",
+  modelled: "what is modelled rather than measured",
 };
 
 console.log("\nask\n");
@@ -78,6 +85,23 @@ for (const q of NONSENSE) {
   const a = Ask.answer(q, query);
   ok(`refuses: "${q || "(empty)"}"`, a === null || a.kind === "refusal",
      a && a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 80)}` : "");
+}
+
+/* ---- qualifiers refuse rather than answering the un-qualified question --
+ * Every one of these returned a confident paragraph about a DIFFERENT
+ * question before the guard existed, which is the failure the whole design
+ * claims to prevent. */
+const QUALIFIED = [
+  "how many runs did i do in june",
+  "how much did i walk last week",
+  "what is my average weekly mileage",
+  "how does june compare to may",
+  "how many steps did i do last week",
+];
+for (const q of QUALIFIED) {
+  const a = Ask.answer(q, query);
+  ok(`qualifier refused: "${q}"`, a.kind === "refusal",
+     a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 70)}` : "");
 }
 
 /* ---- grounding --------------------------------------------------------- */
@@ -115,7 +139,9 @@ function supported(tok, g) {
 
 const GROUND_QS = [...Object.values(CANONICAL),
                    "how is the running goal doing", "how many walks",
-                   "what happened on 2030-06-09", "how is the steps goal"];
+                   "what happened on 2030-06-09", "how is the steps goal",
+                   "what is the heaviest weigh-in", "hows my mood been",
+                   "what is my hardest session", "can i run today"];
 for (const q of GROUND_QS) {
   const a = Ask.answer(q, query);
   if (!a || a.kind !== "answer" || !a.sql) continue;
