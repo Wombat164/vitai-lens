@@ -78,6 +78,7 @@ const CHART_TITLE = {
   "c-weight": "On the weight chart",
   "c-heat": "On the daily-steps heatmap",
   "c-verd": "On the goal-attainment verdicts",
+  "c-resolution": "On where two sources disagreed",
 };
 
 const mounts = Narrator.generate(query);

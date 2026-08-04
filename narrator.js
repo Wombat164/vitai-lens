@@ -334,7 +334,7 @@ const Narrator = (() => {
    * distinction was learned the hard way on this project: two transcriptions
    * of one instrument agreeing tells you the transcription was faithful, and
    * tells you nothing whatever about the measurement.                       */
-  rule("conflicts", "record", 20, (q) => {
+  rule("conflicts", "resolution", 20, (q) => {
     const sql = "SELECT date, dataset, field, chosen_source, chosen_value, " +
                 "over_source, over_value, independent, reason FROM resolution " +
                 "WHERE disagreed = 1 ORDER BY date";
@@ -532,6 +532,7 @@ const Narrator = (() => {
     { id: "weight",     mount: "c-weight", title: null },
     { id: "coverage",   mount: "c-heat",   title: null },
     { id: "attainment", mount: "c-verd",   title: null },
+    { id: "resolution", mount: "c-resolution", title: null },
     { id: "record",     mount: "record",   title: "What the record knows about itself" },
   ];
 

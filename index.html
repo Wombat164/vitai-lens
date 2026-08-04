@@ -212,6 +212,25 @@
   }
   /* The chronology is set apart from the sentences around it. Run at the same
      indent, its closing line read as one more entry in the list. */
+  /* The resolution table. `kept` and `over` are the same KIND of thing - two
+     sources that spoke - so they are set the same and only the outcome
+     differs, rather than the winner being styled as fact and the loser as
+     noise. */
+  .res { width: 100%; font-size: 12.5px; }
+  .res td, .res th { padding: 5px 9px; white-space: nowrap; }
+  .res .kept { color: var(--ink-1); font-weight: 600; }
+  .res .over { color: var(--ink-mut); text-decoration: line-through;
+               text-decoration-thickness: 1px; }
+  .res tr.agreed td { color: var(--ink-mut); }
+  .res .fld { font-family: ui-monospace, Menlo, Consolas, monospace;
+              font-size: 11.5px; }
+  .badge {
+    display: inline-block; font-size: 10.5px; letter-spacing: .02em;
+    padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--ink-2); cursor: help;
+  }
+  .badge.weak { color: var(--series-2);
+                border-color: color-mix(in srgb, var(--series-2) 45%, transparent); }
   .msg .chron {
     display: block; margin: 7px 0; padding-left: 13px;
     border-left: 1px solid var(--border);
@@ -276,6 +295,13 @@
         no row at all</p>
       <div id="c-verd"></div>
       <div class="chart-note" id="n-c-verd"></div></div>
+    <div class="card"><h2>Where two sources disagreed</h2>
+      <p class="hint">every comparison the engine made, what it kept and what
+        it discarded - and whether the two sources were independent, because a
+        value that reached the record twice by one path corroborates the
+        copying and not the measurement</p>
+      <div id="c-resolution"></div>
+      <div class="chart-note" id="n-c-resolution"></div></div>
   </div>
   <div class="card" id="record-card"><h2>What the record knows about itself</h2>
     <p class="hint">not about any one measurement, so it sits under all of
@@ -911,7 +937,7 @@ function brief(db) {
    * rules knowing anything about the layout. */
   const TARGETS = { brief: "#brief", record: "#record",
                     "c-weight": "#n-c-weight", "c-heat": "#n-c-heat",
-                    "c-verd": "#n-c-verd" };
+                    "c-verd": "#n-c-verd", "c-resolution": "#n-c-resolution" };
 
   for (const [mount, sel] of Object.entries(TARGETS)) {
     const el = $(sel); if (el) el.innerHTML = "";
@@ -980,6 +1006,67 @@ function renderSections(db, mount, sections, withHeadings) {
 /* Shared by the trace control and the table view. Absence renders as a word,
  * per the rule that a blank cell reads as zero to everyone who is not looking
  * for the difference. */
+/* Issue #2: the engine resolved 18 conflicts and the athlete saw the winners
+ * as though they were the only values ever recorded. This renders the
+ * comparison, not just its outcome.
+ *
+ * Agreements are shown too, quietly. An engine that compared two sources and
+ * found them consistent has done work, and a table showing only the fights
+ * would misrepresent how often the record simply holds together. */
+function resolutionTable(db) {
+  const mount = $("#c-resolution");
+  if (!mount) return;
+  const rs = rows(db,
+    "SELECT date, dataset, field, chosen_source, chosen_value, over_source, " +
+    "over_value, witnesses, reason, disagreed, independent, compares, " +
+    "discarded FROM resolution ORDER BY disagreed DESC, date, dataset, field");
+  mount.innerHTML = "";
+  if (!rs.length) {
+    mount.innerHTML = '<p class="absent">the engine recorded no comparisons</p>';
+    return;
+  }
+  const t = document.createElement("table");
+  t.className = "res";
+  const hd = t.createTHead().insertRow();
+  for (const c of ["", "date", "field", "kept", "over", "compares"]) {
+    const th = document.createElement("th");
+    th.textContent = c; th.style.textAlign = c === "" ? "center" : "left";
+    hd.appendChild(th);
+  }
+  const tb = t.createTBody();
+  for (const r of rs) {
+    const tr = tb.insertRow();
+    if (!r.disagreed) tr.className = "agreed";
+    const cell = (html, cls) => {
+      const td = tr.insertCell();
+      td.innerHTML = html; td.style.textAlign = "left";
+      if (cls) td.className = cls;
+      return td;
+    };
+    const mark = cell(r.disagreed ? "&#8800;" : "=");
+    mark.style.textAlign = "center";
+    mark.title = r.disagreed ? "the two sources disagreed"
+                             : "the two sources agreed";
+    cell(r.date);
+    cell(`<span class="fld">${r.dataset}.${r.field}</span>`);
+    cell(`<span class="kept">${r.chosen_source} ${r.chosen_value}</span>`);
+    // The discarded value, struck through but LEGIBLE. It is the number the
+    // athlete may remember seeing on a device, and a client that hides it
+    // leaves them unable to explain their own record to themselves.
+    cell(r.over_source === null
+      ? '<span class="absent">nothing to compare</span>'
+      : `<span class="over">${r.over_source} ${r.over_value}</span>`);
+    const weak = r.independent === 0;
+    const badge = cell(
+      `<span class="badge${weak ? " weak" : ""}">${r.compares || "-"}</span>`);
+    badge.title = (r.reason || "") + (weak
+      ? "\n\nNot independent: one instrument reached the record by two paths, "
+        + "so agreement here checks the transcription and not the measurement."
+      : "");
+  }
+  mount.appendChild(t);
+}
+
 function tableOf(rs) {
   const cols = Object.keys(rs[0]);
   const t = document.createElement("table");
@@ -1019,7 +1106,7 @@ function render(db, label) {
   $("#dropnote").hidden = true;
   brief(db);
   weightChart(db); weeklyCharts(db); heatmap(db);
-  verdictStrip(db); tableView(db);
+  verdictStrip(db); resolutionTable(db); tableView(db);
 }
 (async () => {
   // The wasm comes from vendor/ too. Pointing the script at a local file and

@@ -41,6 +41,10 @@ discovered by someone on a train.
   query it came from, so you can disagree with it. See
   [docs/prior-art.md](docs/prior-art.md) for the lineage this borrows from
   and why a small model was rejected rather than merely not attempted.
+- **Where two sources disagreed**: every comparison the engine made, what it
+  kept and what it discarded, and whether the two sources were independent -
+  because a value that reached the record twice by one path corroborates the
+  copying and not the measurement
 - Narrative about a **measurement** sits under the chart that shows it, not
   in the brief: the sentence about unlogged days is under the heatmap where
   the unlogged days are drawn. What is left at the bottom is record-wide
