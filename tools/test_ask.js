@@ -59,6 +59,7 @@ const CANONICAL = {
   modelled: "what is modelled rather than measured",
   route: "what route do i run",
   weather: "what was the weather like",
+  "best-effort": "what is my best 10k",
 };
 
 console.log("\nask\n");
@@ -143,6 +144,7 @@ const GROUND_QS = [...Object.values(CANONICAL),
                    "how is the running goal doing", "how many walks",
                    "what happened on 2030-06-09", "how is the steps goal",
                    "what is the heaviest weigh-in", "hows my mood been",
+                   "fastest 5k", "best marathon",
                    "what is my hardest session", "can i run today"];
 for (const q of GROUND_QS) {
   const a = Ask.answer(q, query);
@@ -159,7 +161,33 @@ for (const q of GROUND_QS) {
     for (const t of one.strs) g.strs.add(t);
   }
   const text = strip(a.text);
-  const orphans = (text.match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || [])
+  // A DURATION IS A NOTATION, NOT A DERIVATION. "60:09" is the stored 3609.4
+  // seconds written differently - the same number, a different unit - so it
+  // is checked as a whole against the seconds in the rows rather than as the
+  // two orphan integers 60 and 09. Splitting it first was the checker being
+  // stricter than the rule it enforces.
+  let rest = text;
+  const clockOk = [];
+  for (const m of text.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g) || []) {
+    const parts = m.split(":").map(Number);
+    const secs = parts.length === 3
+      ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+      : parts[0] * 60 + parts[1];
+    // Supported if some stored value rounds to it at whole-second precision.
+    const ok = [...g.nums].some(h => Math.abs(h - secs) < 1);
+    if (ok) { clockOk.push(m); rest = rest.split(m).join(" "); }
+  }
+  // A DISTANCE IN KILOMETRES IS THE SAME NUMBER AS ONE IN METRES. "10k"
+  // against a stored `distance_m` of 10000 is a unit, not a derivation - the
+  // same class as the clock notation above. Checked before the orphan scan so
+  // the "10" never reaches it alone.
+  for (const m of rest.match(/\b\d+(?:\.\d+)?\s*k(?:m)?\b/gi) || []) {
+    const n = parseFloat(m);
+    if ([...g.nums].some(h => Math.abs(h - n * 1000) < 1 || Math.abs(h - n) < 1e-9)) {
+      rest = rest.split(m).join(" ");
+    }
+  }
+  const orphans = (rest.match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || [])
     .filter(t => !supported(t, g));
   ok(`grounded: "${q}"`, orphans.length === 0,
      orphans.length ? `unsupported: ${orphans.join(", ")}\n         ${text.slice(0, 150)}`

@@ -220,6 +220,8 @@ const Ask = (() => {
             "sleep, how has their mood been, what happened on 2030-06-16<br>" +
             "<strong>extremes</strong> longest run, hardest session, heaviest " +
             "weigh-in - picking a row out, which is allowed where a total is not<br>" +
+            "<strong>best efforts</strong> best 10k, fastest 5k - a rolling " +
+            "window inside a run, which a distance and a duration cannot answer<br>" +
             "<strong>the plan</strong> how are the goals going, did I change " +
             "my plan and why, how did the weeks score<br>" +
             "<strong>where and when</strong> what route do I run, what was " +
@@ -950,6 +952,65 @@ const Ask = (() => {
         sql: [sql, dSql],
       };
     });
+
+  /* The question a runner asks first, and until contract 27 no client could
+   * answer it. `sessions` holds a distance and a duration, so a 10.48 km run
+   * and a 9.74 km run are comparable on neither; the answer lives inside the
+   * track. The engine now persists it.
+   *
+   * Scores above `extremum`, because "best 10k" names a DISTANCE and that is
+   * a different question from "longest run" - the superlative handler would
+   * otherwise take it and answer about the longest session instead. */
+  const EFFORT_DIST = [
+    [/\b(?:10|ten)\s*k(?:m)?\b/, 10000, "10k"],
+    [/\bhalf(?:\s*marathon)?\b/, 21097.5, "half marathon"],
+    [/\bmarathon\b/, 42195, "marathon"],
+    [/\b(?:5|five)\s*k(?:m)?\b/, 5000, "5k"],
+    [/\b(?:1|one)\s*k(?:m)?\b|\bkilometre\b/, 1000, "1k"],
+  ];
+
+  intent("best-effort", (q) => {
+    if (!has(q, "best", "fastest", "quickest", "pb", "personal best", "effort"))
+      return 0;
+    return EFFORT_DIST.some(([re]) => re.test(q)) ? 9 : 0;
+  }, (q, s, query) => {
+    const hit = EFFORT_DIST.find(([re]) => re.test(q));
+    const d = hit[1], label = hit[2];
+    const sql = "SELECT track, date, distance_m, seconds, start, basis " +
+                "FROM best_efforts WHERE distance_m = " + d +
+                " ORDER BY seconds LIMIT 1";
+    const allSql = "SELECT COUNT(*) AS n FROM best_efforts WHERE distance_m = " + d;
+    const r = query(sql)[0], all = query(allSql)[0];
+    if (!r) {
+      return {
+        text: "No track in this record is long enough to hold a " +
+              esc(label) + ", so there is no best one. That is the record " +
+              "declining to answer rather than a zero: a run shorter than the " +
+              "distance cannot contain it.",
+        sql: [sql, allSql],
+      };
+    }
+    const mins = Math.floor(r.seconds / 60), secs = r.seconds % 60;
+    const paceS = r.seconds / (d / 1000);
+    return {
+      text: "The fastest " + esc(label) + " inside any run is " +
+            "<b class=\"n n-derived\">" + mins + ":" +
+            String(Math.round(secs)).padStart(2, "0") + "</b>, on " +
+            esc(r.date) + ". " +
+            "That is a rolling window, not a lap: it can start anywhere in the " +
+            "run, which is why it answers a question a distance and a duration " +
+            "cannot. " + N.derCount(all.n) + " " + N.plural(all.n, "track") + " " +
+            N.plural(all.n, "is", "are") + " long enough to hold one. " +
+            (r.basis === "device"
+              ? "Measured against the watch's own cumulative distance, which is " +
+                "an observation."
+              : "Measured against the haversine sum the engine computes from " +
+                "the coordinates, which is a derivation and not an observation - " +
+                "GPS noise inflates path length, so this reads slightly faster " +
+                "than a device-measured window would."),
+      sql: [sql, allSql],
+    };
+  }, { superlative: true });
 
   /* ---- vetoes ------------------------------------------------------------
    * A question can contain a keyword this thing recognises and still be asking
