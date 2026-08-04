@@ -150,8 +150,13 @@
   .absent { color: var(--ink-mut); font-style: italic; font-size: 12px; }
   /* An ordinal-only quantity: the engine vouches for the ordering, not the
      magnitude. Marked in the cell rather than in a footnote, because a reader
-     who has to remember a footnote will read the number as exact. */
-  .ordinal { color: var(--ink-2); border-bottom: 1px dotted var(--ink-mut);
+     who has to remember a footnote will read the number as exact.
+
+     This is the SAME claim `.soft` makes in prose - "the engine does not
+     vouch for this magnitude" - so it is the same mark. Two dotted underlines
+     meaning the same thing in two places would be a reader's problem, not a
+     distinction. */
+  .ordinal { color: var(--ink-2); border-bottom: 1px dotted currentColor;
              cursor: help; }
   .note { color: var(--ink-mut); font-size: 12.5px; line-height: 1.5;
           border-left: 2px solid var(--border); padding: 2px 0 2px 12px;
@@ -230,6 +235,11 @@
   .u { font-weight: 400; font-size: 0.94em; }
   .u-recorded { color: var(--num-recorded); }
   .u-derived  { color: var(--num-derived); }
+  /* A magnitude the engine will not vouch for: modelled, or ordinal. A SECOND
+     CHANNEL, not a third colour - colour answers where a number came from,
+     this answers how much it claims, and putting both on one channel is what
+     turns a legible page into a cacophony. Composes with either ink. */
+  .soft { border-bottom: 1px dotted currentColor; cursor: help; }
   /* The key, so the colours are a stated convention rather than decoration a
      reader has to infer. */
   .numkey { display: flex; gap: 16px; flex-wrap: wrap;
@@ -326,6 +336,9 @@
         recorded: something observed it</span>
       <span><b class="n n-derived">44.6</b><span class="u u-derived">%</span>
         derived: computed from other values, counts included</span>
+      <span><span class="soft"><b class="n n-recorded">2.8</b>&#8201;<span
+        class="u u-recorded">km</span></span> dotted: a magnitude the engine
+        will not vouch for</span>
     </p>
     <div class="brief" id="brief"></div></div>
   <div class="card" id="ask-card"><h2>Ask it something</h2>

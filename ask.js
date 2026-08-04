@@ -292,10 +292,11 @@ const Ask = (() => {
   intent("on-date", (q, s) => s.date ? 8 : 0,
     (q, s, query) => {
       const d = s.date.replace(/'/g, "''");
-      const sql = `SELECT date, steps, sleep_h, rhr, kcal_in, active_min, ` +
-                  `coverage, note FROM daily WHERE date = '${d}'`;
-      const sesSql = `SELECT type, distance_km, duration_s, avg_hr FROM ` +
-                     `sessions WHERE date = '${d}'`;
+      const sql = `SELECT date, steps, sleep_h, rhr, kcal_in, kcal_out, ` +
+                  `active_min, mood, feel, pain, coverage, modelled, note ` +
+                  `FROM daily WHERE date = '${d}'`;
+      const sesSql = `SELECT type, distance_km, duration_s, avg_hr, rpe, ` +
+                     `modelled FROM sessions WHERE date = '${d}'`;
       // BOTH queries are cited. This answer draws on two tables, and citing
       // only the first left the session distance traceable to nothing - the
       // same defect the brief's grounding test caught there, arriving here.
@@ -314,20 +315,62 @@ const Ask = (() => {
       if (day) {
         // Everything in `daily` was reported by a source, so these are all
         // recorded. Units take their symbol where one exists.
+        // `modelled` names the field the engine computed rather than
+        // observed, so the mark goes on exactly that field and not on its
+        // neighbours - kcal_out is usually modelled and steps is not.
+        const modelled = new Set(String(day.modelled || "").split(/[\s,]+/)
+                                 .filter(Boolean));
         for (const [k, unit, dp, tail] of [["steps", "steps", 0, ""],
                                            ["sleep_h", "h", 1, " of sleep"],
                                            ["rhr", "bpm", 0, " resting"],
-                                           ["active_min", "min", 0, " active"]]) {
-          if (day[k] !== null && day[k] !== undefined)
-            bits.push(N.rec(day[k], unit, dp) + tail);
+                                           ["active_min", "min", 0, " active"],
+                                           ["kcal_out", "kcal", 0, " out"]]) {
+          if (day[k] === null || day[k] === undefined) continue;
+          const f = N.rec(day[k], unit, dp);
+          bits.push((modelled.has(k)
+            ? N.soft(f, "The record marks this field modelled: the engine " +
+                        "computed it rather than observing it, so the " +
+                        "magnitude is not one it vouches for.")
+            : f) + tail);
         }
       }
-      const sessions = ses.map(x => `a <code>${esc(x.type)}</code>` +
-        (x.distance_km !== null ? ` of ${N.rec(x.distance_km, "km", 2)}` : ""));
+      const sessions = ses.map(x => {
+        const mod = new Set(String(x.modelled || "").split(/[\s,]+/).filter(Boolean));
+        const km = x.distance_km === null ? "" : (() => {
+          const f = N.rec(x.distance_km, "km", 2);
+          return ` of ` + (mod.has("distance_km")
+            ? N.soft(f, "Distance the engine modelled rather than measured - " +
+                        "an ergometer's conversion, not a distance travelled.")
+            : f);
+        })();
+        // RPE is the athlete's own judgment of effort, and the engine declares
+        // no scale for it. Stated in words rather than given an ink of its
+        // own: prose already distinguishes "an RPE of 4" from "4 km", and a
+        // reader who does not know what RPE is will not be helped by a colour.
+        const eff = x.rpe === null || x.rpe === undefined ? ""
+          : `, effort ${N.rec(x.rpe)} by his own judgment`;
+        return `a <code>${esc(x.type)}</code>${km}${eff}`;
+      });
+      // What the athlete said about the day, as against what was measured of
+      // it. G75: subjective and objective are different quantities, and the
+      // lens has been rendering none of the first kind at all.
+      const said = [];
+      if (day) {
+        if (day.mood !== null && day.mood !== undefined)
+          said.push(`mood ${N.rec(day.mood)}`);
+        if (day.feel) said.push(`the day felt <em>${esc(day.feel)}</em>`);
+        if (day.pain !== null && day.pain !== undefined)
+          said.push(`pain ${N.rec(day.pain)}`);
+      }
       return {
         text: `On ${esc(s.date)}: ` +
               (bits.length ? N.listify(bits) : "no daily figures") +
               (sessions.length ? `. Sessions: ${N.listify(sessions)}.` : ".") +
+              (said.length
+                ? ` He reported ${N.listify(said)} - his own account of the ` +
+                  `day, which the engine keeps as a different quantity from ` +
+                  `anything measured of him, and for which it declares no scale.`
+                : ``) +
               (day && day.coverage
                 ? ` The day is marked <code>${esc(day.coverage)}</code>.`
                 : ` The day carries no coverage marking, which the engine keeps ` +

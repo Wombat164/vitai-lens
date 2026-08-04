@@ -120,6 +120,25 @@ const Narrator = (() => {
     return `<b class="n n-${kind}">${num(value, dp)}</b>` +
            (u ? `${sep}<span class="u u-${kind}">${esc(u)}</span>` : "");
   }
+  /* A THIRD channel, and deliberately not a third colour.
+   *
+   * Colour answers "where did this number come from". This answers a different
+   * question - "how much does it claim" - and stacking a second question onto
+   * the same channel is how a legible page becomes a cacophony. So it is a
+   * dotted underline, and it composes with either colour.
+   *
+   * It marks the one class of number that is invisible in prose: a magnitude
+   * the engine will not vouch for. 2.8 km off a crosstrainer console looks
+   * exactly like 2.8 km measured, and `modelled` is the record saying it is
+   * not. Ordinal quantities are the same claim - the engine vouches for the
+   * ORDER and not the size - so they share the mark rather than earning
+   * another one.
+   *
+   * The reason is in the title attribute, because a mark without a reason is
+   * decoration a reader has to guess at. */
+  const soft = (html, why) =>
+    `<span class="soft" title="${esc(why)}">${html}</span>`;
+
   const rec = (v, unit, dp) => figure(v, "recorded", unit, dp);
   const der = (v, unit, dp) => figure(v, "derived", unit, dp);
   const pct = (v) => figure(v, "derived", "%", 0);
@@ -622,8 +641,8 @@ const Narrator = (() => {
   }
 
   return { generate, RULES, SECTIONS,
-           _internal: { listify, plural, num, count, quantity,
-                        figure, rec, der, pct, derCount, UNIT } };
+           _internal: { listify, plural, num, count, quantity, esc,
+                        figure, rec, der, pct, derCount, soft, UNIT } };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = Narrator;

@@ -67,6 +67,27 @@ The inks are NOT the chart series colours. `#0ea5a0` is 3.0:1 on white, which is
 
 Tables are left alone. The distinction earns its noise where the two kinds sit in one sentence; in the resolution table every value is a recorded one, so colouring them all would say nothing and cost legibility.
 
+### A third channel, not a third colour
+
+Colour answers *where did this number come from*. A second question - *how much does it claim* - goes on a different channel, because stacking two questions onto one channel is how a legible page becomes a cacophony.
+
+So a **dotted underline** marks a magnitude the engine will not vouch for, and it composes with either ink. It covers two cases that are the same claim:
+
+- **modelled** - the record says the engine computed the field rather than observing it. 2.8 km off a crosstrainer console looks exactly like 2.8 km measured, and this is the only distinction on the page that is genuinely invisible in prose.
+- **ordinal** - the engine vouches for the ordering and not the size. The table already marked these; it is now the same mark rather than a second dotted underline meaning the same thing somewhere else.
+
+### What is deliberately NOT given ink
+
+**Subjective values.** Mood, pain and RPE are a different quantity from anything measured of the athlete (G75), and the lens rendered none of them at all until now. But prose already distinguishes "an RPE of 4" from "4 km", and a reader who does not know what RPE is will not be helped by a colour. They are surfaced and named in words instead - *"his own account of the day"* - and the answer says the engine declares no scale for them, because it does not.
+
+**Intervals.** An interval is its own marking: rendering `76.4 (75.9-76.9)` says more than any decoration could, and rendering a bare number with a badge meaning "there was an interval" would be strictly worse.
+
+**Contested values.** Every value the resolution table adjudicated could be marked, which in practice means marking most of the record. That surface has its own card, where the comparison can be shown rather than gestured at.
+
+**Per-number provenance.** Where a number came from is already answered in the weight chart's marks, the tooltips, and the resolution table. Repeating it in prose would need a third and fourth ink for a question that has three homes already.
+
+The test for adding a mark: **does confusing the two lead a reader to a wrong conclusion about their own body?** Recorded against derived passes it. Modelled against measured passes it. The rest do not, and a page that marks everything has marked nothing.
+
 ## Answering questions, and the three it will not answer
 
 `ask.js` takes a typed question and answers it in prose. It runs on the same rule as the narrator, with the same trace control, and it is deliberately built to look like the chat box everyone already knows - because the point is that it looks like one and behaves differently at the edges.
