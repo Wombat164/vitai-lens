@@ -212,6 +212,36 @@
   }
   /* The chronology is set apart from the sentences around it. Run at the same
      indent, its closing line read as one more entry in the list. */
+  /* The ask box. Typeset as an input and an answer, deliberately like every
+     chat interface a reader has used, because the point is that it LOOKS like
+     one and behaves differently at the edges: it refuses. */
+  #ask-form { display: flex; gap: 8px; margin: 2px 0 10px; }
+  #ask-input {
+    flex: 1; font: inherit; font-size: 14px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--page); color: var(--ink-1);
+  }
+  #ask-input:focus-visible {
+    outline: 2px solid var(--series-1); outline-offset: 1px;
+    border-color: var(--series-1);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .chip {
+    font: inherit; font-size: 11.5px; cursor: pointer;
+    padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--border); background: none; color: var(--ink-2);
+  }
+  .chip:hover { color: var(--series-1); border-color: var(--series-1); }
+  /* A question echoed back above its answer, so a scrolled-away exchange is
+     still readable as a pair rather than an orphaned paragraph. */
+  .asked {
+    font-size: 13px; color: var(--ink-mut); margin: 12px 0 5px;
+    padding-left: 13px; border-left: 2px solid transparent;
+  }
+  .asked b { color: var(--ink-2); font-weight: 600; }
+  .msg.refusal { border-left-color: var(--ink-mut); }
+  .msg.refusal, .msg.broken { background: color-mix(in srgb, var(--ink-1) 4%, transparent); }
+
   /* The resolution table. `kept` and `over` are the same KIND of thing - two
      sources that spoke - so they are set the same and only the outcome
      differs, rather than the winner being styled as fact and the loser as
@@ -268,6 +298,18 @@
       <code>docs/prior-art.md</code> argues why a small model was rejected
       rather than merely not attempted</p>
     <div class="brief" id="brief"></div></div>
+  <div class="card" id="ask-card"><h2>Ask it something</h2>
+    <p class="hint">a natural-language interface to the same tables, and not a
+      language model - it maps your question onto a fixed set of queries and
+      <strong>refuses when it cannot</strong>, rather than producing something
+      that reads like an answer. Prior art in <code>docs/prior-art.md</code>.</p>
+    <form id="ask-form" autocomplete="off">
+      <input id="ask-input" type="text" spellcheck="false"
+             placeholder="how are the goals going?" aria-label="ask a question">
+      <button class="btn" type="submit">Ask</button>
+    </form>
+    <div class="chips" id="ask-chips"></div>
+    <div class="brief" id="ask-out"></div></div>
   <div class="cards">
     <div class="card"><h2>Weight</h2>
       <p class="hint">every weigh-in the record holds, positioned by date, drawn
@@ -322,6 +364,7 @@
 <!-- A classic script, not a module: modules are blocked by CORS on file://,
      and this page is meant to survive being opened straight off a disk. -->
 <script src="narrator.js"></script>
+<script src="ask.js"></script>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -915,10 +958,13 @@ function refuse(html) {
   const note = $("#dropnote");
   note.hidden = false;
   note.innerHTML = html;
-  for (const sel of ["#tiles", "#charts", "#verdicts", "#table", "#brief"]) {
+  for (const sel of ["#tiles", "#charts", "#verdicts", "#table", "#brief",
+                     "#ask-out", "#ask-chips"]) {
     const el = $(sel); if (el) el.innerHTML = "";
   }
-  const bc = $("#brief-card"); if (bc) bc.hidden = true;
+  for (const id of ["#brief-card", "#ask-card", "#record-card"]) {
+    const el = $(id); if (el) el.hidden = true;
+  }
 }
 
 /* The narrator's output, with the trace control that makes it checkable.
@@ -974,33 +1020,63 @@ function renderSections(db, mount, sections, withHeadings) {
       const p = document.createElement("p");
       p.className = "msg " + m.tone;
       p.innerHTML = m.text;
-      if (m.sql) {
-        const btn = document.createElement("button");
-        btn.className = "trace";
-        btn.textContent = "show the rows this came from";
-        const box = document.createElement("div");
-        box.className = "rows";
-        box.hidden = true;
-        btn.addEventListener("click", () => {
-          if (!box.dataset.filled) {
-            const rs = rows(db, m.sql);
-            const pre = document.createElement("pre");
-            pre.textContent = m.sql;
-            box.appendChild(pre);
-            box.appendChild(rs.length ? tableOf(rs)
-              : Object.assign(document.createElement("p"),
-                  { className: "absent", textContent: "no rows" }));
-            box.dataset.filled = "1";
-          }
-          box.hidden = !box.hidden;
-          btn.textContent = box.hidden ? "show the rows this came from"
-                                       : "hide the rows";
-        });
-        p.appendChild(btn); p.appendChild(box);
-      }
+      if (m.sql) attachTrace(db, p, m.sql);
       mount.appendChild(p);
     }
   }
+}
+
+/* The ask box. Answers land in the same message shape as the brief, with the
+ * same "show the rows" control, because an answer typed into a box is not a
+ * lesser claim than one the page volunteered and should not be easier to
+ * trust. A refusal renders as a message too - visibly, in place, rather than
+ * as an empty box that leaves the reader wondering if it is still thinking. */
+function wireAsk(db) {
+  const form = $("#ask-form"), input = $("#ask-input"), out = $("#ask-out");
+  const chips = $("#ask-chips");
+  if (!form) return;
+  $("#ask-card").hidden = false;
+  out.innerHTML = "";
+
+  const EXAMPLES = [
+    "how are the goals going?",
+    "how is the running goal doing?",
+    "what do they weigh?",
+    "what happened on 2030-06-16?",
+    "did any sources disagree?",
+    "are they restricted from anything?",
+    "which days are missing?",
+    "what can you answer?",
+  ];
+  chips.innerHTML = "";
+  for (const ex of EXAMPLES) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = ex;
+    b.addEventListener("click", () => { input.value = ex; ask(ex); });
+    chips.appendChild(b);
+  }
+
+  function ask(question) {
+    const a = Ask.answer(question, (sql) => rows(db, sql));
+    if (!a) return;
+    const q = document.createElement("p");
+    q.className = "asked";
+    q.innerHTML = "<b>asked</b> " + question.replace(/[<>&]/g,
+      c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    const p = document.createElement("p");
+    p.className = "msg " + (a.kind === "answer" ? "note" : a.kind);
+    p.innerHTML = a.text;
+    if (a.sql) attachTrace(db, p, a.sql);
+    // Newest first: the answer to what was just asked should not require
+    // scrolling past everything asked before it.
+    out.prepend(p); out.prepend(q);
+  }
+
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const v = input.value.trim();
+    if (v) { ask(v); input.select(); }
+  });
 }
 
 /* Shared by the trace control and the table view. Absence renders as a word,
@@ -1067,6 +1143,39 @@ function resolutionTable(db) {
   mount.appendChild(t);
 }
 
+/* The trace control, shared by the brief and the ask box. */
+function attachTrace(db, p, sql) {
+  // One query or several: an answer that draws on two tables cites two, and
+  // showing only the first would leave half its numbers traceable to nothing.
+  const queries = Array.isArray(sql) ? sql : [sql];
+  const btn = document.createElement("button");
+  btn.className = "trace";
+  btn.textContent = queries.length > 1
+    ? `show the rows this came from (${queries.length} queries)`
+    : "show the rows this came from";
+  btn.dataset.show = btn.textContent;
+  const box = document.createElement("div");
+  box.className = "rows";
+  box.hidden = true;
+  btn.addEventListener("click", () => {
+    if (!box.dataset.filled) {
+      for (const q of queries) {
+        const rs = rows(db, q);
+        const pre = document.createElement("pre");
+        pre.textContent = q;
+        box.appendChild(pre);
+        box.appendChild(rs.length ? tableOf(rs)
+          : Object.assign(document.createElement("p"),
+              { className: "absent", textContent: "no rows" }));
+      }
+      box.dataset.filled = "1";
+    }
+    box.hidden = !box.hidden;
+    btn.textContent = box.hidden ? btn.dataset.show : "hide the rows";
+  });
+  p.appendChild(btn); p.appendChild(box);
+}
+
 function tableOf(rs) {
   const cols = Object.keys(rs[0]);
   const t = document.createElement("table");
@@ -1104,7 +1213,7 @@ function render(db, label) {
   }
   $("#source-note").textContent = label;
   $("#dropnote").hidden = true;
-  brief(db);
+  brief(db); wireAsk(db);
   weightChart(db); weeklyCharts(db); heatmap(db);
   verdictStrip(db); resolutionTable(db); tableView(db);
 }

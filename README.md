@@ -41,6 +41,12 @@ discovered by someone on a train.
   query it came from, so you can disagree with it. See
   [docs/prior-art.md](docs/prior-art.md) for the lineage this borrows from
   and why a small model was rejected rather than merely not attempted.
+- **Ask it something**: type a question in your own words and get an answer
+  in prose, with the query it came from. It is a natural-language interface
+  to a fixed schema, not a language model, and the interesting half is what
+  it refuses: judgments ("is this a good plan"), predictions ("what will
+  they weigh next month") and causes ("why are they tired") are declined by
+  name, because a record reader is not entitled to any of the three
 - **Where two sources disagreed**: every comparison the engine made, what it
   kept and what it discarded, and whether the two sources were independent -
   because a value that reached the record twice by one path corroborates the

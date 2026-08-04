@@ -18,6 +18,8 @@ jobs:
           node-version: '22'
       - name: narrator tests (grounding, citations, realisation)
         run: node tools/test_narrator.js
+      - name: ask tests (grounding, refusal, no SQL from user text)
+        run: node tools/test_ask.js
       - name: the brief renders
         run: node tools/narrate.js
 
@@ -30,6 +32,8 @@ jobs:
           node-version: '22'
       - name: narrator parses
         run: node --check narrator.js
+      - name: ask parses
+        run: node --check ask.js
       - name: the page script parses
         # The page is a single HTML file, so its script is not otherwise
         # checked by anything until a browser refuses to run it.

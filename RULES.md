@@ -50,6 +50,20 @@ Every generated sentence carries the SQL that produced it, and the page renders 
 
 **It is not a language model, and that is a decision rather than a limitation.** A model under 10 MB that emits fluent English is available off the shelf; `docs/prior-art.md` sets out the lineage this technique comes from and why the model was rejected. The short version is that a language model cannot be constructed so as to be *unable* to state a number that is not in the record, cannot offer the trace control because no query produced its sentence, and produces exactly the artifact this project exists to prevent: a confident, plausible, unfalsifiable sentence about someone's body.
 
+## Answering questions, and the three it will not answer
+
+`ask.js` takes a typed question and answers it in prose. It runs on the same rule as the narrator, with the same trace control, and it is deliberately built to look like the chat box everyone already knows - because the point is that it looks like one and behaves differently at the edges.
+
+It maps a question onto a **fixed set of parameterised queries** and refuses anything that does not map. No SQL is ever built from user text. That refusal is not a limitation to be engineered away later; it is the property that makes the answers worth reading, and it follows PRECISE (2003), which found that characterising the tractable subset and declining the rest is what made an NL database interface trustworthy.
+
+Three classes are refused **by name**, before any matching happens, however well their words fit an intent:
+
+- **judgments** - is this good, should they, is it enough. A record reader that graded a plan would be inventing an opinion and lending it the record's authority.
+- **predictions** - what will they weigh, how long until. The record holds what happened. A projection would be arithmetic done in the client and attributed to the engine.
+- **causes** - why, because, what made. G74: a causal attribution is a claim someone makes, never something derived from a coincidence in the data.
+
+The veto exists because two questions got past the first version and answered fluently: *"is this a good training plan"* returned a session-type breakdown, and *"what will they weigh next month"* returned the current reading. Both answered a different question than the one asked, from a keyword classifier with no model in it. **Confabulation is not a property of neural networks. It is a property of any system that produces output for an input it has not understood** - and the only defence is a boundary it will not cross rather than an intention to be careful.
+
 ## What this repo is not
 
 - **Not a second copy of loadline's stats pane.** Loadline is the product; this is the proof. If the two ever disagree about a number, exactly one of them computed it, and that one is wrong.

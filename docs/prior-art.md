@@ -18,6 +18,9 @@ should be verified before it is repeated as a claim in public material.
 | The Reiter and Dale NLG pipeline and its stage names | recalled, high confidence |
 | BabyTalk / BT-45 / BT-Nurse, neonatal intensive care, Aberdeen | recalled, high confidence on existence and domain |
 | The specific BT-45 evaluation result vs graphics | **recalled, low confidence** - do not quote a number |
+| BASEBALL, LUNAR, CHAT-80: existence, dates, domains | recalled, high confidence |
+| LUNAR's answered-question proportion | **recalled, low confidence** - stated qualitatively on purpose |
+| PRECISE and "semantically tractable" | recalled, medium-high confidence |
 | SumTime marine forecasts, deployed commercially | recalled, medium confidence |
 | ELIZA, Weizenbaum 1966, and the ELIZA effect | recalled, high confidence |
 
@@ -127,6 +130,65 @@ engine where they can be tested. Where the engine has already produced text -
 than paraphrasing, which is the same discipline `safety.py` applies when it
 emits hardcoded escalation strings rather than letting a model phrase them.
 
+## The ask box: natural-language interfaces to databases
+
+`ask.js` answers typed questions. It is the same argument again in a second
+place, and it borrows from a second, older literature.
+
+Natural-language interfaces to databases predate the relational model.
+BASEBALL (Green et al., 1961) answered questions about a season's games.
+LUNAR (Woods, 1973) let geologists query the Apollo sample database in English
+and handled a large majority of what was asked of it at a conference,
+unrehearsed. CHAT-80 (Warren and Pereira, 1982) mapped English to logic over a
+geography database and is still the textbook example. None of these generated
+their answers; they parsed a question into a query and rendered the result.
+
+The design decision worth stealing is PRECISE's (Popescu, Etzioni and Kautz,
+2003). Rather than trying to parse arbitrary English, it characterised the
+subset of questions that map unambiguously onto database elements - their term
+is **semantically tractable** - and **refused everything else** rather than
+guessing. Refusing the remainder is what made the answers worth trusting, and
+that is exactly the trade made here.
+
+So the pipeline is intent classification and slot filling over a closed schema,
+where the intent selects a *parameterised* query. No SQL is ever constructed
+from user text; the only values that reach a query are a date matched by
+regex, a session type from a fixed map, and a goal slug read out of the
+database. `tools/test_ask.js` throws injection payloads at it and checks the
+tables are still there afterwards.
+
+### The veto, which is the part that took real work
+
+Refusing what it does not understand turned out to be the easy half. The hard
+half is refusing what it *appears* to understand. Two questions got through the
+first version and both were caught by the test rather than by reading the code:
+
+| question | matched | answered with |
+|---|---|---|
+| "is this a good training plan" | `sessions`, on "train" | a session-type breakdown |
+| "what will they weigh next month" | `weight`, on "weigh" | the current reading |
+
+Both answered a *different question* fluently, from a keyword classifier with
+no model in it anywhere. That is worth stating plainly, because it is easy to
+believe confabulation is a property of neural networks: it is a property of any
+system that will produce output for an input it has not understood.
+
+The veto runs before intent matching and refuses three classes outright, with
+a typed explanation rather than a generic one:
+
+- **judgment** - good, better, should, enough, recommend. A record reader that
+  graded plans would be inventing an opinion and lending it the record's
+  authority.
+- **prediction** - will, forecast, next month. The record holds what happened;
+  a projection would be arithmetic done by this page and attributed to the
+  engine.
+- **causation** - why, because, what made. G74 already holds that a causal
+  attribution is a claim someone makes, never something derived from a
+  coincidence in the data.
+
+None of these is a gap to be filled later. They are the boundary of what a
+record reader is entitled to say.
+
 ## References
 
 - Reiter, E. and Dale, R. (2000). *Building Natural Language Generation
@@ -141,6 +203,14 @@ emits hardcoded escalation strings rather than letting a model phrase them.
   Intelligence in Medicine*.
 - Sripada, S., Reiter, E. and Davy, I. (2003). SumTime-Mousam: Configurable
   marine weather forecast generator. *Expert Update* 6(3).
+- Green, B., Wolf, A., Chomsky, C. and Laughery, K. (1961). BASEBALL: an
+  automatic question answerer. *Western Joint Computer Conference*.
+- Woods, W. (1973). Progress in natural language understanding: an application
+  to lunar geology. *AFIPS*.
+- Warren, D. and Pereira, F. (1982). An efficient easily adaptable system for
+  interpreting natural language queries. *Computational Linguistics* 8(3-4).
+- Popescu, A., Etzioni, O. and Kautz, H. (2003). Towards a theory of natural
+  language interfaces to databases. *IUI 2003*.
 - Weizenbaum, J. (1966). ELIZA - a computer program for the study of natural
   language communication between man and machine. *CACM* 9(1).
 - Eldan, R. and Li, Y. (2023). TinyStories: How small can language models be
