@@ -23,6 +23,15 @@ your own vitai content repo. Everything runs in your browser via
 sql.js/WebAssembly - **no server-side anything, your data never leaves the
 machine**.
 
+That claim now covers the code as well as the data. sql.js is vendored in
+`vendor/`, not fetched: the parser used to arrive from a CDN on every load
+with no integrity attribute, which made the page useless offline and put a
+third party inside the trust boundary - a substituted parser would have had
+the database in the same JS heap it had just built. `tools/test_offline.py`
+aborts every request that leaves the origin and fails if the page still
+wants one, so a regression to a remote reference is caught rather than
+discovered by someone on a train.
+
 ## What it shows (v0.1)
 
 - **The brief**: the record turned into English, by a template engine and

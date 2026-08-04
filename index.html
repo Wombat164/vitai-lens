@@ -287,7 +287,12 @@
 </main>
 <div class="tooltip" id="tip"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+<!-- sql.js is VENDORED, not fetched. It used to come from a CDN with no
+     integrity attribute, which meant the page did not work offline and,
+     worse, the code that parses the health record arrived from a third
+     party on every load - with the parsed database in the same JS heap it
+     had just built. See vendor/README.md. -->
+<script src="vendor/sql-wasm.js"></script>
 <!-- A classic script, not a module: modules are blocked by CORS on file://,
      and this page is meant to survive being opened straight off a disk. -->
 <script src="narrator.js"></script>
@@ -1017,8 +1022,10 @@ function render(db, label) {
   verdictStrip(db); tableView(db);
 }
 (async () => {
-  const SQL = await initSqlJs({ locateFile:
-    f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/${f}` });
+  // The wasm comes from vendor/ too. Pointing the script at a local file and
+  // leaving locateFile on the CDN would have left the larger half of the
+  // dependency remote, which is the shape of fix that looks done and is not.
+  const SQL = await initSqlJs({ locateFile: f => `vendor/${f}` });
   $("#file").addEventListener("change", async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     render(new SQL.Database(new Uint8Array(await f.arrayBuffer())), f.name);

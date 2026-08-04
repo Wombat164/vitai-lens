@@ -49,6 +49,19 @@ jobs:
           print("page script parses")
           PY
 
+  offline:
+    # The page must render with no network beyond the server it loaded from.
+    # This is the regression guard for the vendored parser: it fails with the
+    # URL the page wanted, so a slide back to a CDN cannot pass unnoticed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright && playwright install --with-deps chromium
+      - run: python tools/test_offline.py
+
   ascii:
     # House style: ASCII only, and never the double-hyphen separator.
     runs-on: ubuntu-latest
@@ -61,7 +74,11 @@ jobs:
           for p in list(pathlib.Path(".").rglob("*.md")) + \
                    list(pathlib.Path(".").rglob("*.js")) + \
                    [pathlib.Path("index.html")]:
-              if ".git" in p.parts:
+              # vendor/ is third-party code. House style is a rule about what
+              # we write, and reformatting someone else's library to satisfy it
+              # would turn the next upgrade into a merge conflict. It happens to
+              # pass today, which is not a reason to leave it in scope.
+              if ".git" in p.parts or "vendor" in p.parts:
                   continue
               t = p.read_text(encoding="utf-8")
               for i, line in enumerate(t.splitlines(), 1):
