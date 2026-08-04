@@ -1,3 +1,15 @@
 * text=auto
 *.db binary
 *.png binary
+
+# Vendored third-party bytes: NO line-ending conversion, ever.
+#
+# vendor/README.md publishes a SHA-384 for each of these so anyone can verify
+# they are the bytes the CDN served. Under `text=auto` a Windows checkout
+# rewrites sql-wasm.js with CRLF, its worktree hash stops matching the
+# published one, and a verifier concludes the file was tampered with. The
+# .wasm survives today only because git's binary heuristic finds NUL bytes
+# early - which is a guess about content, not a rule, and not something an
+# integrity claim should rest on.
+vendor/** -text
+vendor/sql-wasm.wasm binary
