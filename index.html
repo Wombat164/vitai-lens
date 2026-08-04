@@ -38,6 +38,10 @@
     --delta-good:#006300;
     --seq-1:#dbf3ec; --seq-2:#a9e2d3; --seq-3:#6fcbb4;
     --seq-4:#3fae8c; --seq-5:#5cb356; --seq-6:#84cc16;
+    /* Number inks. NOT the series colours: #0ea5a0 is 3.0:1 on white and
+       fails as text, which is fine for a 3px dot and not for a figure someone
+       has to read. These are the darkened pair, 5.5:1 and 5.0:1. */
+    --num-recorded: #0f766e;  --num-derived: #b45309;
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])), :root:where(:not([data-theme="light"])) .viz-root {
@@ -52,6 +56,7 @@
       --delta-good:#22c55e;
       --seq-1:#10312f; --seq-2:#14493f; --seq-3:#1a634d;
       --seq-4:#2b7d4e; --seq-5:#4f9a3c; --seq-6:#84cc16;
+      --num-recorded: #5eead4;  --num-derived: #fbbf24;
     }
   }
   * { box-sizing: border-box; }
@@ -212,6 +217,25 @@
   }
   /* The chronology is set apart from the sentences around it. Run at the same
      indent, its closing line read as one more entry in the list. */
+  /* Two kinds of number, in two inks.
+     RECORDED - something observed it and put it in the record.
+     DERIVED  - arithmetic over other values, including every count.
+     A reader who cannot tell them apart grants a derivation the standing of
+     an observation, and a derivation inherits every assumption in its inputs.
+     Units take the colour and not the weight: the number is the figure, the
+     unit is a label on it. */
+  .n { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .n-recorded { color: var(--num-recorded); }
+  .n-derived  { color: var(--num-derived); }
+  .u { font-weight: 400; font-size: 0.94em; }
+  .u-recorded { color: var(--num-recorded); }
+  .u-derived  { color: var(--num-derived); }
+  /* The key, so the colours are a stated convention rather than decoration a
+     reader has to infer. */
+  .numkey { display: flex; gap: 16px; flex-wrap: wrap;
+            font-size: 11.5px; color: var(--ink-mut); margin: 0 0 12px; }
+  .numkey b { font-weight: 650; }
+
   /* The ask box. Typeset as an input and an answer, deliberately like every
      chat interface a reader has used, because the point is that it LOOKS like
      one and behaves differently at the edges: it refuses. */
@@ -297,6 +321,12 @@
       language model - every sentence will show you the rows it came from, and
       <code>docs/prior-art.md</code> argues why a small model was rejected
       rather than merely not attempted</p>
+    <p class="numkey">
+      <span><b class="n n-recorded">75.9</b>&#8201;<span class="u u-recorded">kg</span>
+        recorded: something observed it</span>
+      <span><b class="n n-derived">44.6</b><span class="u u-derived">%</span>
+        derived: computed from other values, counts included</span>
+    </p>
     <div class="brief" id="brief"></div></div>
   <div class="card" id="ask-card"><h2>Ask it something</h2>
     <p class="hint">a natural-language interface to the same tables, and not a

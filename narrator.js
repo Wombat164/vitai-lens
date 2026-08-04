@@ -75,27 +75,70 @@ const Narrator = (() => {
   const cap = (s) => s.replace(/^(<[^>]+>)*[a-z]/,
     m => m.slice(0, -1) + m.slice(-1).toUpperCase());
 
-  /* Stage 3, lexical choice. A metric is stored as a column name because that
-   * is what it is; printing `distance_km` in a sentence tells the reader the
-   * developer stopped caring at the database boundary. An unmapped metric
-   * falls through as its own name rather than being dropped, so a new metric
-   * reads awkwardly instead of vanishing. */
+  /* ---- two kinds of number ----------------------------------------------
+   *
+   * Every figure on this page came out of a table, but they did not all get
+   * there the same way, and the difference is the most important thing about
+   * them:
+   *
+   *   RECORDED  a value that entered the record from a source. A scale said
+   *             75.9, the athlete declared a target of 30, a watch reported
+   *             142 bpm. Someone or something observed it.
+   *
+   *   DERIVED   a value computed from other values. 44.6 per cent is not a
+   *             thing anybody measured; it is arithmetic over a target and a
+   *             count. So is `counted`, so is every COUNT(*) in this file.
+   *
+   * They are set in different ink because a reader who cannot tell them apart
+   * will grant a derivation the standing of an observation, and derivations
+   * inherit every assumption in their inputs. This is the typographic form of
+   * the rule the whole client runs on.
+   *
+   * COUNTS FROM THIS FILE ARE MARKED DERIVED, including the ones the rule
+   * permits. "The narrator may state how many times the engine stated it"
+   * makes counting legal; it does not make a count an observation.
+   *
+   * Units take the same colour unbolded, and use the symbol where one exists -
+   * the number is the figure, the unit is a label on it, and bolding both
+   * gives the unit a weight it has not earned. */
+
   const UNIT = {
-    distance_km: "km", steps: "steps", active_min: "active minutes",
-    kg: "kg", kcal_in: "kcal", kcal_out: "kcal", protein_g: "g protein",
-    sleep_h: "hours of sleep", rhr: "bpm", external: null,
+    distance_km: "km", steps: "steps", active_min: "min",
+    kg: "kg", kcal_in: "kcal", kcal_out: "kcal", protein_g: "g",
+    sleep_h: "h", rhr: "bpm", avg_hr: "bpm", duration_s: "s",
+    external: null,
   };
   const PERIOD = { weekly: "a week", daily: "a day", monthly: "a month" };
 
-  // "13.38 of 30 km a week". Renders only what the row holds; a missing unit
-  // or period drops out of the phrase rather than being invented.
+  // A unit that is a symbol binds to its number; a word does not. "45%" and
+  // "13.38 km" are both right and the rule is typographic, not arbitrary.
+  const BINDS = new Set(["%"]);
+
+  function figure(value, kind, unit, dp = 0) {
+    const u = unit === undefined || unit === null ? "" : String(unit);
+    const sep = (!u || BINDS.has(u)) ? "" : " ";
+    return `<b class="n n-${kind}">${num(value, dp)}</b>` +
+           (u ? `${sep}<span class="u u-${kind}">${esc(u)}</span>` : "");
+  }
+  const rec = (v, unit, dp) => figure(v, "recorded", unit, dp);
+  const der = (v, unit, dp) => figure(v, "derived", unit, dp);
+  const pct = (v) => figure(v, "derived", "%", 0);
+
+  // A spelled count is still a derived count, and carries the same ink. The
+  // alternative - words plain, digits coloured - would make the marking look
+  // like a style choice rather than a claim about where a number came from.
+  const derCount = (n) => `<b class="n n-derived">${count(n)}</b>`;
+
+  // "13.38 of 30 km a week". `counted` is DERIVED (the engine aggregated it);
+  // `target` is RECORDED (the athlete declared it). They sit next to each
+  // other in one phrase and are not the same kind of fact.
   function quantity(counted, target, metric, period) {
     const unit = UNIT[metric] !== undefined ? UNIT[metric] : metric;
     const per = PERIOD[period] || "";
-    const tail = [unit, per].filter(Boolean).join(" ");
     const head = (counted === null || counted === undefined)
-      ? `a target of ${num(target, 2)}` : `${num(counted, 2)} of ${num(target, 2)}`;
-    return tail ? `${head} ${tail}` : head;
+      ? `a target of ${rec(target, unit, 2)}`
+      : `${der(counted, null, 2)} of ${rec(target, unit, 2)}`;
+    return per ? `${head} ${per}` : head;
   }
 
   /* ---- stage 1: content determination ---------------------------------- */
@@ -139,10 +182,10 @@ const Narrator = (() => {
     if (!rs.length) return [];
     const parts = rs.map(r =>
       `<em>${esc(r.title)}</em> (${quantity(r.counted, r.target, r.metric, r.period)}, ` +
-      `${num(r.progress_pct, 0)} per cent)`);
+      `${pct(r.progress_pct)})`);
     return [{
       tone: "watch",
-      text: `${rs.length === 1 ? "One goal is" : count(rs.length) + " goals are"} ` +
+      text: `${rs.length === 1 ? "One goal is" : derCount(rs.length) + " goals are"} ` +
             `below the ${rs[0].polarity === "floor" ? "floor" : "line"} you set: ` +
             listify(parts) + ". " +
             "That is the engine's arithmetic against the target you declared, " +
@@ -186,7 +229,7 @@ const Narrator = (() => {
     if (!rs.length) return [];
     return [{
       tone: "note",
-      text: `${count(rs.length)} of your goals ${plural(rs.length, "carries", "carry")} ` +
+      text: `${derCount(rs.length)} of your goals ${plural(rs.length, "carries", "carry")} ` +
             `no number and ${plural(rs.length, "is", "are")} true only when you ` +
             `say so: ` + listify(rs.map(r => `<em>${esc(r.title)}</em>`)) + ". " +
             "Nothing here can score " + plural(rs.length, "it", "them") + ", and " +
@@ -206,7 +249,7 @@ const Narrator = (() => {
       (r.tracker ? ` (${esc(r.tracker)})` : ""));
     return [{
       tone: "note",
-      text: `${count(rs.length)} ${plural(rs.length, "goal is", "goals are")} ` +
+      text: `${derCount(rs.length)} ${plural(rs.length, "goal is", "goals are")} ` +
             `settled somewhere this engine cannot see: ` + listify(parts) + ". " +
             `There is a number, and it is not in here. The engine tracks ` +
             plural(rs.length, "it", "them") + ` without pretending to measure ` +
@@ -229,7 +272,7 @@ const Narrator = (() => {
       tone: "watch",
       text: `<em>${esc(r.title)}</em> passed its ` +
             `${r.deadline_kind === "hard" ? "hard " : ""}deadline of ` +
-            `${esc(r.deadline)}, ${num(Math.abs(r.days_to_deadline))} days ago, ` +
+            `${esc(r.deadline)}, ${der(Math.abs(r.days_to_deadline), "days")} ago, ` +
             `and is still open. ` +
             (r.verification === "external"
               ? "Nothing has arrived to settle it, which is what a goal held " +
@@ -267,7 +310,7 @@ const Narrator = (() => {
       // target held and the date moved, and calling that a change to the
       // target would be the narrator inventing the more dramatic version.
       const moved = (r.before !== null && r.after !== null && r.before !== r.after)
-        ? `${esc(r.direction)} from ${num(r.before)} to ${num(r.after)}`
+        ? `${esc(r.direction)} from ${rec(r.before)} to ${rec(r.after)}`
         : (r.deadline_pushed
             ? `kept its target and moved its ${r.deadline_kind === "hard" ? "hard " : ""}deadline`
             : esc(r.direction));
@@ -276,7 +319,7 @@ const Narrator = (() => {
     });
     return [{
       tone: "note",
-      text: `The plan moved ${count(rs.length)} ${plural(rs.length, "time")}, ` +
+      text: `The plan moved ${derCount(rs.length)} ${plural(rs.length, "time")}, ` +
             `and the record kept the reason each time.` +
             `<span class="chron">` + lines.join("<br>") + `</span><br>` +
             `None of that is drift. A plan edited with a reason attached is a ` +
@@ -299,7 +342,7 @@ const Narrator = (() => {
       text: `The engine flagged one of those edits: ` +
             `<code>${esc(r.slug)}</code> was ${esc(r.direction)}` +
             (r.before !== null && r.after !== null
-              ? ` from ${num(r.before)} to ${num(r.after)}` : "") +
+              ? ` from ${rec(r.before)} to ${rec(r.after)}` : "") +
             ` on ${esc(r.date)}. It flags a loosened threshold on principle, ` +
             `and it is a flag rather than an accusation. ` +
             (r.reason
@@ -343,11 +386,11 @@ const Narrator = (() => {
     const indep = rs.filter(r => r.independent).length;
     const fields = [...new Set(rs.map(r => r.field))];
     let text =
-      `Two sources disagreed ${count(rs.length)} ${plural(rs.length, "time")}, ` +
+      `Two sources disagreed ${derCount(rs.length)} ${plural(rs.length, "time")}, ` +
       `over ${listify(fields.map(f => `<code>${esc(f)}</code>`))}. ` +
       `The engine picked a winner each time and kept the loser.`;
     if (indep !== rs.length) {
-      text += ` ${cap(count(rs.length - indep))} of those ` +
+      text += ` ${cap(derCount(rs.length - indep))} of those ` +
         `${plural(rs.length - indep, "was", "were")} between sources the engine ` +
         `does not consider independent, which is a weaker thing than it looks: ` +
         `when one instrument reaches the record by two paths, agreement checks ` +
@@ -370,17 +413,17 @@ const Narrator = (() => {
     if (!unknown) {
       return [{
         tone: "note",
-        text: `Every one of the ${num(rs[0].total)} weigh-ins above names where ` +
+        text: `Every one of the ${der(rs[0].total)} weigh-ins above names where ` +
               `it came from: ` +
-              listify(named.map(r => `<code>${esc(r.origin)}</code> ${num(r.n)}`)) + ".",
+              listify(named.map(r => `<code>${esc(r.origin)}</code> ${der(r.n)}`)) + ".",
         sql,
       }];
     }
     return [{
       tone: "note",
-      text: `Of the ${num(unknown.total)} weigh-ins above, ${num(unknown.n)} name ` +
+      text: `Of the ${der(unknown.total)} weigh-ins above, ${der(unknown.n)} name ` +
             `no origin at all. The rest name one: ` +
-            listify(named.map(r => `<code>${esc(r.origin)}</code> ${num(r.n)}`)) + ". " +
+            listify(named.map(r => `<code>${esc(r.origin)}</code> ${der(r.n)}`)) + ". " +
             `The hollow rings are the ones whose custody was never written down. ` +
             `They are not wrong and they are not guesses; nobody recorded how ` +
             `they reached the record, and that cannot be recovered later. ` +
@@ -403,8 +446,8 @@ const Narrator = (() => {
     if (!rs.length) return [];
     const total = rs[0].total;
     const top = rs[0];
-    const parts = rs.map(r => `<code>${esc(r.trust)}</code> ${num(r.n)}`);
-    let text = `Provenance across ${num(total)} record-days: ` +
+    const parts = rs.map(r => `<code>${esc(r.trust)}</code> ${der(r.n)}`);
+    let text = `Provenance across ${der(total, "record-days")}: ` +
                listify(parts) + ".";
     if (top.trust === "unknown-transit") {
       text += " The largest group is the one where the number arrived and the " +
@@ -430,14 +473,14 @@ const Narrator = (() => {
     if (!r || !r.logged) return [];
     const partial = { n: r.partial }, blank = { n: r.blank };
     let text = `The record runs ${esc(r.a)} to ${esc(r.b)}, ` +
-               `${num(r.logged)} days.`;
+               `${der(r.logged, "days")}.`;
     if (blank && blank.n) {
-      text += ` ${cap(count(blank.n))} of them carry no coverage marking at all, ` +
+      text += ` ${cap(derCount(blank.n))} of them carry no coverage marking at all, ` +
               `which the engine keeps distinct from a day marked empty. ` +
               `Unannotated is not the same as nothing happened.`;
     }
     if (partial && partial.n) {
-      text += ` ${cap(count(partial.n))} ${plural(partial.n, "is", "are")} marked <code>partial</code>.`;
+      text += ` ${cap(derCount(partial.n))} ${plural(partial.n, "is", "are")} marked <code>partial</code>.`;
     }
     return [{ tone: "note", text, sql }];
   });
@@ -451,10 +494,10 @@ const Narrator = (() => {
     if (!rs.length) return [];
     const by = Object.fromEntries(rs.map(r => [r.verdict, r.n]));
     const total = rs[0].total;
-    let text = `Across ${num(total)} weekly checks the engine returned ` +
-               listify(rs.map(r => `<code>${esc(r.verdict)}</code> ${num(r.n)}`)) + ".";
+    let text = `Across ${der(total, "weekly checks")} the engine returned ` +
+               listify(rs.map(r => `<code>${esc(r.verdict)}</code> ${der(r.n)}`)) + ".";
     if (by.no_data) {
-      text += ` The ${count(by.no_data)} <code>no_data</code> ` +
+      text += ` The ${derCount(by.no_data)} <code>no_data</code> ` +
               `${plural(by.no_data, "week")} ${plural(by.no_data, "is", "are")} ` +
               `not ${plural(by.no_data, "a miss", "misses")}. ` +
               `The engine declines to score a week it cannot see, and refusing ` +
@@ -472,7 +515,7 @@ const Narrator = (() => {
     if (!rs.length) return [];
     return [{
       tone: "note",
-      text: `${cap(count(rs.length))} ${plural(rs.length, "claim")} ` +
+      text: `${cap(derCount(rs.length))} ${plural(rs.length, "claim")} ` +
             `${plural(rs.length, "was", "were")} each superseded by a later one. ` +
             `The originals are still in the log; the read model shows what won, ` +
             `and the log shows that anything was ever in question.`,
@@ -579,7 +622,8 @@ const Narrator = (() => {
   }
 
   return { generate, RULES, SECTIONS,
-           _internal: { listify, plural, num, count, quantity } };
+           _internal: { listify, plural, num, count, quantity,
+                        figure, rec, der, pct, derCount, UNIT } };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = Narrator;

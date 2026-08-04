@@ -191,7 +191,7 @@ const Ask = (() => {
       // here, and the engine does not emit one - so the honest answer names
       // the reading and its date and stops.
       return {
-        text: `The last weigh-in is <strong>${N.num(r.kg, 1)} kg</strong> on ` +
+        text: `The last weigh-in is ${N.rec(r.kg, "kg", 1)} on ` +
               `${esc(r.date)}` +
               (r.origin ? `, origin <code>${esc(r.origin)}</code>.`
                         : `, with no origin recorded - the value is real, its ` +
@@ -228,7 +228,7 @@ const Ask = (() => {
         return {
           text: `<em>${esc(r.title)}</em>: ` +
                 `${N.quantity(r.counted, r.target, r.metric, r.period)}, ` +
-                `${N.num(r.progress_pct, 0)} per cent. The engine marks it ` +
+                `${N.pct(r.progress_pct)}. The engine marks it ` +
                 `<code>${esc(r.achievement_status || r.lifecycle_status)}</code>` +
                 (r.breach ? `, and it is under the line.` : `.`),
           sql,
@@ -241,12 +241,12 @@ const Ask = (() => {
       if (!rs.length) return { text: "No goals are declared.", sql };
       const under = rs.filter(r => r.breach);
       const parts = rs.map(r => `<em>${esc(r.title)}</em>` +
-        (r.progress_pct !== null ? ` (${N.num(r.progress_pct, 0)} per cent)`
+        (r.progress_pct !== null ? ` (${N.pct(r.progress_pct)})`
                                  : " (no number)"));
       return {
-        text: `${N.count(rs.length)} goals: ` + N.listify(parts) + ". " +
+        text: `${N.derCount(rs.length)} goals: ` + N.listify(parts) + ". " +
               (under.length
-                ? `${cap(N.count(under.length))} ${N.plural(under.length, "is", "are")} ` +
+                ? `${cap(N.derCount(under.length))} ${N.plural(under.length, "is", "are")} ` +
                   `under the line. `
                 : `None is under its line. `) +
               `Ask about one by name for the detail.`,
@@ -269,7 +269,7 @@ const Ask = (() => {
                          `not a statement that none happened.`, sql };
         }
         return {
-          text: `${N.count(r.n)} <code>${esc(r.type)}</code> ` +
+          text: `${N.derCount(r.n)} <code>${esc(r.type)}</code> ` +
                 `${N.plural(r.n, "session")}, from ${esc(r.first)} to ` +
                 `${esc(r.last)}. I can count them because counting rows is a ` +
                 `property of the query; I will not total the distance, because ` +
@@ -283,7 +283,7 @@ const Ask = (() => {
       const rs = query(sql);
       return {
         text: `The record holds ` +
-              N.listify(rs.map(r => `${N.num(r.n)} <code>${esc(r.type)}</code>`)) +
+              N.listify(rs.map(r => `${N.der(r.n)} <code>${esc(r.type)}</code>`)) +
               `, by the engine's own session types.`,
         sql,
       };
@@ -312,16 +312,18 @@ const Ask = (() => {
       }
       const bits = [];
       if (day) {
-        for (const [k, label, dp] of [["steps", "steps", 0],
-                                      ["sleep_h", "hours of sleep", 1],
-                                      ["rhr", "bpm resting", 0],
-                                      ["active_min", "active minutes", 0]]) {
+        // Everything in `daily` was reported by a source, so these are all
+        // recorded. Units take their symbol where one exists.
+        for (const [k, unit, dp, tail] of [["steps", "steps", 0, ""],
+                                           ["sleep_h", "h", 1, " of sleep"],
+                                           ["rhr", "bpm", 0, " resting"],
+                                           ["active_min", "min", 0, " active"]]) {
           if (day[k] !== null && day[k] !== undefined)
-            bits.push(`${N.num(day[k], dp)} ${label}`);
+            bits.push(N.rec(day[k], unit, dp) + tail);
         }
       }
       const sessions = ses.map(x => `a <code>${esc(x.type)}</code>` +
-        (x.distance_km !== null ? ` of ${N.num(x.distance_km, 2)} km` : ""));
+        (x.distance_km !== null ? ` of ${N.rec(x.distance_km, "km", 2)}` : ""));
       return {
         text: `On ${esc(s.date)}: ` +
               (bits.length ? N.listify(bits) : "no daily figures") +
@@ -343,8 +345,8 @@ const Ask = (() => {
       const rs = query(sql);
       if (!rs.length) return { text: "The record carries no provenance rows.", sql };
       return {
-        text: `Across ${N.num(rs[0].total)} record-days: ` +
-              N.listify(rs.map(r => `<code>${esc(r.trust)}</code> ${N.num(r.n)}`)) +
+        text: `Across ${N.der(rs[0].total, "record-days")}: ` +
+              N.listify(rs.map(r => `<code>${esc(r.trust)}</code> ${N.der(r.n)}`)) +
               `. ` + (rs[0].trust === "unknown-transit"
                 ? `The largest group is the one where the number arrived and the ` +
                   `path it took did not. Not wrong - unaccompanied, and that ` +
@@ -370,11 +372,11 @@ const Ask = (() => {
       }
       const weak = rs.filter(r => !r.independent).length;
       return {
-        text: `${N.count(rs.length)} ${N.plural(rs.length, "time")}, over ` +
+        text: `${N.derCount(rs.length)} ${N.plural(rs.length, "time")}, over ` +
               N.listify([...new Set(rs.map(r => `<code>${esc(r.field)}</code>`))]) +
               `. The engine kept a winner each time and did not throw the loser ` +
               `away.` + (weak
-                ? ` ${cap(N.count(weak))} of those were between sources it does not ` +
+                ? ` ${cap(N.derCount(weak))} of those were between sources it does not ` +
                   `consider independent, where agreement checks the copying and ` +
                   `not the measurement.`
                 : ``),
@@ -391,9 +393,9 @@ const Ask = (() => {
                   "FROM daily";
       const r = query(sql)[0];
       return {
-        text: `The record runs ${esc(r.a)} to ${esc(r.b)}, ${N.num(r.logged)} ` +
-              `days. ${N.num(r.blank)} carry no coverage marking and ` +
-              `${N.num(r.partial)} are marked <code>partial</code>. I am not ` +
+        text: `The record runs ${esc(r.a)} to ${esc(r.b)}, ${N.der(r.logged, "days")}. ` +
+              `${cap(N.der(r.blank))} carry no coverage marking and ` +
+              `${N.der(r.partial)} are marked <code>partial</code>. I am not ` +
               `going to ask why. The days somebody stops writing things down ` +
               `are frequently the ones worth knowing about, and a tool that ` +
               `demands an explanation is one they stop opening.`,
@@ -410,10 +412,10 @@ const Ask = (() => {
       if (!rs.length) return { text: "The engine emitted no weekly verdicts.", sql };
       const by = Object.fromEntries(rs.map(r => [r.verdict, r.n]));
       return {
-        text: `Over ${N.num(rs[0].total)} weekly checks: ` +
-              N.listify(rs.map(r => `<code>${esc(r.verdict)}</code> ${N.num(r.n)}`)) +
+        text: `Over ${N.der(rs[0].total, "weekly checks")}: ` +
+              N.listify(rs.map(r => `<code>${esc(r.verdict)}</code> ${N.der(r.n)}`)) +
               `.` + (by.no_data
-                ? ` The ${N.count(by.no_data)} <code>no_data</code> weeks are not ` +
+                ? ` The ${N.derCount(by.no_data)} <code>no_data</code> weeks are not ` +
                   `misses - the engine declines to score a week it cannot see.`
                 : ``),
         sql,

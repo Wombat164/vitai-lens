@@ -50,6 +50,23 @@ Every generated sentence carries the SQL that produced it, and the page renders 
 
 **It is not a language model, and that is a decision rather than a limitation.** A model under 10 MB that emits fluent English is available off the shelf; `docs/prior-art.md` sets out the lineage this technique comes from and why the model was rejected. The short version is that a language model cannot be constructed so as to be *unable* to state a number that is not in the record, cannot offer the trace control because no query produced its sentence, and produces exactly the artifact this project exists to prevent: a confident, plausible, unfalsifiable sentence about someone's body.
 
+## Two kinds of number, in two inks
+
+Every figure on the page came out of a table, and they did not all get there the same way:
+
+- **Recorded** (teal, bold) - a value that entered the record from a source. A scale said 75.9, the athlete declared a target of 30, a watch reported 142 bpm. Something observed it.
+- **Derived** (amber, bold) - a value computed from other values. 44.6% is not a thing anybody measured; it is arithmetic over a target and a count. So is `counted`, and so is every `COUNT(*)` this client runs.
+
+A reader who cannot tell them apart will grant a derivation the standing of an observation, and a derivation inherits every assumption in its inputs. The colours are the typographic form of the rule the whole client runs on, and there is a key at the top of the brief so they are a stated convention rather than decoration to be inferred.
+
+**Counts made by this client are marked derived, including the ones the rule permits.** "The narrator may state how many times the engine stated it" makes counting legal; it does not make a count an observation.
+
+**Units take the colour and not the weight**, and use the symbol where one exists - `km`, `kg`, `%`, `bpm`, `min`, `h`. The number is the figure and the unit is a label on it; bolding both gives the unit a weight it has not earned. A symbol binds to its number (`45%`), a word does not (`13.38 km`).
+
+The inks are NOT the chart series colours. `#0ea5a0` is 3.0:1 on white, which is fine for a 3px dot and fails as text, so the number inks are a darkened pair at 5.5:1 and 5.0:1, with a light pair for dark mode.
+
+Tables are left alone. The distinction earns its noise where the two kinds sit in one sentence; in the resolution table every value is a recorded one, so colouring them all would say nothing and cost legibility.
+
 ## Answering questions, and the three it will not answer
 
 `ask.js` takes a typed question and answers it in prose. It runs on the same rule as the narrator, with the same trace control, and it is deliberately built to look like the chat box everyone already knows - because the point is that it looks like one and behaves differently at the edges.
