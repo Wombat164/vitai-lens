@@ -23,6 +23,79 @@ jobs:
       - name: the brief renders
         run: node tools/narrate.js
 
+  conformance:
+    # THE CLAIM IN RULES.md, CHECKED AGAINST THE ENGINE AS IT IS TODAY.
+    #
+    # This repo calls itself vitai's conformance client - "a barebones reader
+    # that proves the engine's read model is consumable by someone who is not
+    # the flagship app". Every other job here runs against the COMMITTED
+    # `demo/health.db`, which is a snapshot, so all of them stayed green while
+    # this client sat a contract behind the engine. Twice in one day, both
+    # times found by a person rebuilding the demo by hand.
+    #
+    # A conformance instrument that only notices drift when someone looks is
+    # not an instrument. So this job checks the engine out at its DEFAULT
+    # BRANCH, unpinned and deliberately, rebuilds the demo through the real
+    # engine, and fails if this client's pin no longer matches what the engine
+    # emits.
+    #
+    # IT IS SUPPOSED TO GO RED WHEN THE ENGINE MOVES. That is the signal, not
+    # a fault: this repo's job is to be the thing that notices. loadline pins
+    # its engine and follows deliberately, because a product needs to choose
+    # when to absorb a change; this one does not get that freedom, and should
+    # not want it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: Wombat164/vitai
+          path: vitai
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: install the engine at its current head
+        run: pip install -e ./vitai
+      - name: the engine's own demo builds through this client's builder
+        working-directory: lens
+        run: python tools/make_demo.py --vitai ../vitai
+      - name: this client is pinned to the contract the engine emits
+        working-directory: lens
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sqlite3, sys
+          con = sqlite3.connect("demo/health.db")
+          built = str(con.execute(
+              "SELECT value FROM meta WHERE key = 'contract'").fetchone()[0])
+          bad = []
+          for f in ("index.html", "tools/narrate.js"):
+              s = pathlib.Path(f).read_text(encoding="utf-8")
+              m = re.search(r'BUILT_AGAINST_CONTRACT = "(\d+)"', s)
+              if not m:
+                  bad.append(f"{f}: no BUILT_AGAINST_CONTRACT found")
+              elif m.group(1) != built:
+                  bad.append(f"{f}: pinned to {m.group(1)}, engine emits {built}")
+          if bad:
+              print("\n".join(bad))
+              print("\nThe engine moved. Read its migration note for contract "
+                    f"{built}, decide what it asks of this client, then raise "
+                    "the pin. Raising it without reading is how a client "
+                    "renders a shape it does not understand.")
+              sys.exit(1)
+          print(f"pinned to contract {built}, which is what the engine emits")
+          PY
+      - name: the suites pass against the freshly built demo
+        working-directory: lens
+        run: |
+          node tools/test_ask.js
+          node tools/test_narrator.js
+          node tools/narrate.js
+
   syntax:
     runs-on: ubuntu-latest
     steps:

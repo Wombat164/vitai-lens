@@ -4,6 +4,16 @@ vitai-lens is the **conformance client** for [vitai](https://github.com/Wombat16
 
 It is not a stats product. It is the demonstration that vitai did the hard work, and that a client can be thin.
 
+## What being the conformance client costs, and who does not pay it
+
+Decided 2026-08-05, because the roles had drifted into the opposite of what they were called.
+
+**This repo tracks the engine's default branch, unpinned, and CI goes red when the engine moves.** That is the signal, not a fault. Every other job here runs against the committed `demo/health.db`, which is a snapshot, so all of them stayed green through two contract lags in a single day - both found by a person rebuilding the demo by hand. An instrument that only notices drift when someone looks is not an instrument, so the `conformance` job rebuilds the demo through the engine at head and fails if this client's pin no longer matches what the engine emits.
+
+**loadline pins its engine and follows deliberately.** A product has to choose when to absorb a change; it should not be knocked over by a merge in another repo it did not make and cannot review in time. That freedom is what this repo gives up so that it exists somewhere.
+
+The failure is loud on purpose and the remedy is never to edit the number: read the engine's migration note for the new contract, decide what it asks of this client, then raise the pin. Raising it without reading is how a client renders a shape it does not understand, which is the exact failure the contract number exists to prevent.
+
 ## The rule, and who it binds
 
 **The lens may not compute.**
