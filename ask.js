@@ -172,6 +172,9 @@ const Ask = (() => {
     const gs = query("SELECT slug, title FROM goal_progress");
     const n = norm(q);
     let best = null, bestScore = 0;
+    const scores = [];
+    const stem = (w) => w.replace(/s$/, "");
+    const qWords = new Set(n.split(" ").filter(Boolean).map(stem));
     for (const g of gs) {
       // The slug is the goal's NAME and counts for more than words that happen
       // to appear in its title. "the running goal" means the goal called
@@ -180,11 +183,44 @@ const Ask = (() => {
       const slugWords = norm(g.slug).split(" ").filter(w => w.length > 2);
       const titleWords = norm(g.title || "").split(" ")
         .filter(w => w.length > 3 && !STOP.has(w));
-      const hits = slugWords.filter(w => n.includes(w)).length * 3
-                 + titleWords.filter(w => n.includes(w)).length;
+      /* WORDS, NOT SUBSTRINGS.
+       *
+       * This matched with `n.includes(w)`, so a goal word counted whenever it
+       * appeared anywhere inside the question - including inside a longer,
+       * unrelated word. "Enjoy running AGAIN" matched the question "how did I
+       * do AGAINST my step goal", won outright, and the tool reported the
+       * wrong goal while saying "nothing here can score it" about a step goal
+       * that is scored at 85% one row away. Signalling absence of data that is
+       * present is the worst answer this page can give.
+       *
+       * Compared as words, with plurals folded so `steps` still meets "step".
+       * Deliberately no prefix rule: a prefix match is what reintroduces
+       * again/against. */
+      const hits = slugWords.filter(w => qWords.has(stem(w))).length * 3
+                 + titleWords.filter(w => qWords.has(stem(w))).length;
+      scores.push({ g, hits });
       if (hits > bestScore) { bestScore = hits; best = g; }
     }
-    return bestScore > 0 ? best : null;
+    /* A TIE IS NOT A MATCH.
+     *
+     * `bestScore > 0` meant one shared word picked a goal, and three of this
+     * record's goal titles end in "a week" - so "the 30 km a week goal" scored
+     * 1 against all three and the first one encountered won. Asked about
+     * running, the tool confidently reported active minutes at 283%.
+     *
+     * Three separate testers led with this, and the reason it is the worst
+     * class of bug here is that it does not look like one: the number is real,
+     * the sentence is well formed, and nothing signals that it is about a
+     * different goal. This page refuses to compute a figure it cannot ground;
+     * refusing to GUESS WHICH ROW a loose question meant is the same
+     * discipline applied to the router rather than to the arithmetic.
+     *
+     * An indecisive match falls through to the branch that lists every goal
+     * with its own figure and invites naming one, which is honest and is also
+     * more useful than a wrong pick. */
+    const top = scores.filter(x => x.hits === bestScore);
+    if (bestScore === 0 || top.length > 1) return null;
+    return best;
   }
 
   /* ---- the record's own "now" ------------------------------------------
@@ -1048,6 +1084,20 @@ const Ask = (() => {
     if (!/\b(per week|a week|each week|every week|weekly|last week|this week|past week)\b/.test(q))
       return 0;
     if (s.metric && !SESSION_METRICS.has(s.metric)) return 0;
+    /* A GOAL TITLE IS NOT A REQUEST FOR ITS DATASET.
+     *
+     * "Build to 30 km a week, injury-free" is the name of a goal, and asking
+     * how it is going matched `a week` here and took the question off the
+     * goals intent - which had the answer, "23.12 of 30 km a week, 77%", and
+     * lost to a raw weekly dump. A tester found it within an hour of this
+     * intent shipping. The failure is not that the numbers were wrong; it is
+     * that a confident answer to a different question is worse than a
+     * refusal, which is the thing this whole page exists to avoid.
+     *
+     * So a question shaped like progress-against-a-goal defers, and the goals
+     * intent below now recognises the phrasing that carried no keyword. */
+    if (/\b(goal|target|on track|on-track|progress|how (?:am|are|is) (?:i|we|it|things) doing)\b/.test(q))
+      return 0;
     return has(q, "far", "distance", "km", "kilometre", "kilometres", "mileage",
                "volume", "train", "trained", "training", "run", "ran", "ride",
                "session", "sessions", "how much", "how many", "swim", "walk")

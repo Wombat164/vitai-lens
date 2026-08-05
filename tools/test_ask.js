@@ -118,6 +118,46 @@ for (const q of QUALIFIED) {
      a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 70)}` : "");
 }
 
+/* ---- routing: the wrong row is worse than no row ------------------------
+ * Three testers independently led with the same failure, and none of them
+ * reported a wrong NUMBER. They reported a well-formed sentence about a
+ * different goal, which is the answer shape this page has no defence against
+ * unless the router refuses the way the arithmetic does.
+ *
+ * All three cases below produced a confident wrong answer before these tests
+ * existed. */
+{
+  const goal = (q) => strip(Ask.answer(q, query).text || "");
+
+  // "Enjoy running AGAIN" matched "how did I do AGAINST my step goal" on a
+  // substring, won outright, and said nothing could score it - about a goal
+  // scored at 85% one row away.
+  ok("a goal word is matched as a word, not as a substring",
+     /77k steps|steps a week/i.test(goal("how did I do against my step goal")),
+     goal("how did I do against my step goal").slice(0, 80));
+
+  // Three goal titles end in "a week", so one shared word picked whichever
+  // came first. An indecisive match must list rather than guess.
+  {
+    const t = goal("whats my progress on the 30 km a week goal");
+    ok("an indecisive goal match lists them instead of picking one",
+       /goals:/i.test(t) && /Build to 30 km/i.test(t), t.slice(0, 80));
+  }
+
+  // A decisive match must still win, or the fix above would have turned every
+  // goal question into a list.
+  ok("a decisive goal match still answers about that goal",
+     /Build to 30 km a week/i.test(goal("hows the running goal doing")),
+     goal("hows the running goal doing").slice(0, 80));
+
+  // The session-weeks intent shipped matching `a week`, which is inside the
+  // title of the running goal, so asking how that goal was going returned a
+  // raw weekly dump instead of 77%.
+  ok("a goal-shaped question does not fall into the weekly-volume intent",
+     Ask.answer("how am I doing on the 30 km a week goal", query).matched !== "session-weeks",
+     `matched ${Ask.answer("how am I doing on the 30 km a week goal", query).matched}`);
+}
+
 /* ---- session-weeks: an empty result is scoped by whatever scoped it ------
  * Asked how much they walked last week, the first cut said the record held no
  * walk session AT ALL - true of that week, false of the record, and stated as
