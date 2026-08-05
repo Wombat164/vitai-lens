@@ -61,6 +61,8 @@ const CANONICAL = {
   weather: "what was the weather like",
   "best-effort": "what is my best 10k",
   "session-weeks": "how many km a week do i run",
+  nutrition: "how much protein did i eat",
+  "medical-provenance": "who recorded the achilles entry",
 };
 
 console.log("\nask\n");

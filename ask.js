@@ -343,6 +343,9 @@ const Ask = (() => {
             "weigh-in - picking a row out, which is allowed where a total is not<br>" +
             "<strong>best efforts</strong> best 10k, fastest 5k - a rolling " +
             "window inside a run, which a distance and a duration cannot answer<br>" +
+            "<strong>food</strong> how much protein did I eat, what did I eat " +
+            "on 2030-06-09 - the day figure is the engine's, the items are " +
+            "listed and never added up<br>" +
             "<strong>weekly volume</strong> how many km a week do I run, how " +
             "much did I train each week, how far did I run last week - the " +
             "engine buckets and totals these, so they are rows rather than " +
@@ -1455,6 +1458,118 @@ const Ask = (() => {
             unit: "km" },
     };
   }, { window: true });
+
+  /* Nutrition. THE COLUMNS WERE ALWAYS THERE and nothing asked for them.
+   *
+   * A tester could not reach protein or calories through any phrasing and had
+   * to record it as "either the lens has no intent for it, or the engine never
+   * surfaces nutrition - I cannot tell from outside". The read model settles
+   * it: `daily` carries `kcal_in`, `protein_g` and four more macros, and
+   * `meals` holds item-level rows. This is a missing question, not a missing
+   * table.
+   *
+   * The day figure is the ENGINE'S, and the items are items. This does not add
+   * the items up and present the result as the day - that would be a total,
+   * and it would also be a second, quietly different number beside the one the
+   * engine emitted. */
+  intent("nutrition", (q, s) =>
+    (s.date ? 4 : 0) +
+    (has(q, "protein", "calorie", "calories", "kcal", "eat", "ate", "eating",
+        "intake", "meal", "meals", "food", "macro", "macros", "carb", "carbs",
+        "fat", "sugar", "fibre", "fiber", "sodium") ? 6 : 0),
+    (q, s, query) => {
+      const d = s.date ? s.date.replace(/'/g, "''") : null;
+      const daySql = "SELECT date, kcal_in, protein_g, fat_g, carb_g, fibre_g, " +
+                     "sugar_g, sodium_mg FROM daily WHERE " +
+                     (d ? `date = '${d}'` : "kcal_in IS NOT NULL") +
+                     " ORDER BY date DESC LIMIT 1";
+      const mealSql = "SELECT date, meal, item, grams, kcal_100g, protein_100g, " +
+                      "food_table FROM meals" + (d ? ` WHERE date = '${d}'` : "") +
+                      " ORDER BY date DESC, meal LIMIT 25";
+      const day = query(daySql)[0];
+      /* Scope the items to the SAME DAY as the figure above them. Taking the
+       * latest day WITH a total and the latest day WITH items independently
+       * put a 30 June figure over a 9 June meal list and read as one day.
+       * Two true halves make a false sentence. */
+      const onDay = d || (day && day.date);
+      const mealFinal = onDay
+        ? "SELECT date, meal, item, grams, kcal_100g, protein_100g, food_table " +
+          `FROM meals WHERE date = '${String(onDay).replace(/'/g, "''")}' ORDER BY meal LIMIT 25`
+        : mealSql;
+      const meals = query(mealFinal);
+      const cite = [daySql, mealFinal];
+
+      if (!day && !meals.length) {
+        return {
+          text: d ? `Nothing about food is recorded for ${esc(s.date)}.`
+                  : `The record holds no nutrition figures.`,
+          sql: cite,
+        };
+      }
+      const bits = [];
+      if (day) {
+        for (const [k, unit, tail] of [["kcal_in", "kcal", " in"],
+                                       ["protein_g", "g", " of protein"],
+                                       ["carb_g", "g", " of carbohydrate"],
+                                       ["fat_g", "g", " of fat"],
+                                       ["fibre_g", "g", " of fibre"],
+                                       ["sugar_g", "g", " of sugar"],
+                                       ["sodium_mg", "mg", " of sodium"]]) {
+          if (day[k] === null || day[k] === undefined) continue;
+          bits.push(N.rec(day[k], unit, 0) + tail);
+        }
+      }
+      const named = [...new Set(meals.map(m => m.item))].slice(0, 8);
+      return {
+        text: (bits.length
+                ? `On ${esc(day.date)}: ` + N.listify(bits) + `. Those are the ` +
+                  `engine's day figures.`
+                : `No day total is recorded${d ? ` for ${esc(s.date)}` : ""}.`) +
+              (named.length
+                ? ` The itemised log for that day names ` +
+                  N.listify(named.map(i => `<em>${esc(i)}</em>`)) +
+                  `. I am not adding those up: the day figure above is the ` +
+                  `engine's, and a second total computed here would be a ` +
+                  `different number wearing the same name.`
+                : ` Nothing is logged item by item, so the day figure is all ` +
+                  `there is - which is a thinner record, not a smaller day.`),
+        sql: cite,
+      };
+    });
+
+  /* Who wrote a medical entry down. `medical` carries `source`,
+   * `provider_type` and `device`, and nothing asked - so "who recorded this,
+   * was it a doctor" returned coverage statistics.
+   *
+   * This reports WHAT THE RECORD SAYS and nothing else. Naming a provider type
+   * the athlete stated is class (a), an observation about the record; drawing
+   * any conclusion from it would not be. */
+  intent("medical-provenance", (q, s) =>
+    (has(q, "who", "recorded by", "wrote", "doctor", "clinician", "physio",
+         "provider") ? 4 : 0) +
+    (has(q, "injur", "achilles", "calf", "ankle", "pain", "medical", "entry",
+         "diagnos") ? 4 : 0),
+    (q, s, query) => {
+      const sql = "SELECT date, slug, title, kind, source, provider_type, device " +
+                  "FROM medical ORDER BY date";
+      const rs = query(sql);
+      if (!rs.length) return { text: "The record holds no medical entries.", sql };
+      const byProv = rs.filter(r => r.provider_type);
+      return {
+        text: `${N.derCount(rs.length)} medical ${N.plural(rs.length, "entry", "entries")}, ` +
+              `and every one names who it came from: ` +
+              N.listify(rs.map(r => `${esc(r.date)} <em>${esc(r.title)}</em> from ` +
+                `<code>${esc(r.source)}</code>` +
+                (r.provider_type ? `, provider type <code>${esc(r.provider_type)}</code>`
+                                 : ``))) + `. ` +
+              (byProv.length
+                ? `${cap(N.derCount(byProv.length))} names a provider type. That is ` +
+                  `what the athlete stated, not a clinician writing into this ` +
+                  `record - the source on every one of these is the athlete.`
+                : `None names a provider type.`),
+        sql,
+      };
+    });
 
   /* ---- vetoes ------------------------------------------------------------
    * A question can contain a keyword this thing recognises and still be asking
