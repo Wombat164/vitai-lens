@@ -164,7 +164,20 @@ const Ask = (() => {
 
   function qualifiers(q) {
     const out = { window: null, superlative: null, comparison: false,
-                  aggregate: null };
+                  aggregate: null, streak: false };
+    /* A STREAK IS A FIFTH QUALIFIER, and nothing here can honour one.
+     *
+     * "How many weeks in a row have I been on target for steps" returned the
+     * latest single-week snapshot - 85% - with no indication it was not a
+     * streak. That is worse than a refusal: a reader who was not watching
+     * would take 85% as the answer to a question about consecutive weeks.
+     *
+     * Counting consecutive rows means walking an ordered set and stopping at
+     * the first break, which is a computation over the sequence rather than a
+     * property of any row. `docs/model.md` lists `streaks` under artifact kind
+     * 2 and the read model does not have it, so this is an engine gap and the
+     * honest thing is to name it. */
+    out.streak = /\b(in a row|consecutive|streak|straight|run of)\b/.test(q);
     for (const w of RELATIVE) {
       if (q.includes(w)) { out.window = w; break; }
     }
@@ -1539,6 +1552,26 @@ const Ask = (() => {
                  matched: null };
       }
     }
+    /* A qualifier NO intent can honour is checked before the intents are, so
+     * the reader gets the reason that helps. "How many weeks in a row have I
+     * been on target for steps" is genuinely ambiguous between the steps goal
+     * and the steps metric, and saying so is true and useless: neither can
+     * count a streak, so which one was meant does not matter. */
+    if (qualifiers(q).streak) {
+      return {
+        kind: "refusal",
+        refusal: "streak",
+        text: "That asks for a streak, and nothing here can count one. " +
+              "Counting consecutive periods means walking the rows in order " +
+              "and stopping at the first break, which is a computation over " +
+              "the sequence rather than anything a single row holds. The " +
+              "engine emits no streak, so a number here would be one this page " +
+              "invented - and the nearest figure it has, the latest period on " +
+              "its own, is a different answer wearing the right shape.",
+        sql: null,
+        matched: null,
+      };
+    }
     let best = null, bestScore = 0;
     const scored = [];
     for (const it of INTENTS) {
@@ -1594,6 +1627,9 @@ const Ask = (() => {
      * behaviour this design exists to prevent. */
     const qual = qualifiers(q);
     const h = best.handles || {};
+    /* No `streak` branch here: it is handled before the intents are scored,
+     * because no intent handles it and the ambiguity refusal would otherwise
+     * win and give the reader a true but useless reason. */
     const blocked =
       (qual.window && !h.window
         /* Name the window the reader actually gave. This said "let it read as

@@ -171,6 +171,27 @@ for (const q of QUALIFIED) {
      /longest run in the record/i.test(said("what is my longest run")));
 }
 
+/* ---- a streak is refused, not substituted -------------------------------
+ * "How many weeks in a row have I been on target for steps" returned the
+ * latest single-week snapshot - 85% - with nothing saying it was not a
+ * streak. A reader not watching closely takes that as the answer. */
+{
+  const a = (q) => Ask.answer(q, query);
+  const t = (q) => strip(a(q).text || "");
+
+  ok("a streak question refuses", a("how many weeks in a row have I been on target for steps").kind === "refusal");
+  ok("and it gives the streak reason, not the ambiguity one",
+     /nothing here can count one/.test(t("how many weeks in a row have I been on target for steps")),
+     t("how many weeks in a row have I been on target for steps").slice(0, 80));
+  ok("no substituted percentage appears in it",
+     !/85|%/.test(t("how many weeks in a row have I been on target for steps")));
+  ok("other streak phrasings refuse too",
+     a("whats my longest streak").kind === "refusal" &&
+     a("how many consecutive weeks on target").kind === "refusal");
+  ok("CONTROL: a plain goals question still answers",
+     a("how are the goals going").kind === "answer");
+}
+
 /* ---- the weight answer is not a fixed template --------------------------
  * Every weight question returned the same sentence about the latest reading,
  * including "how many weigh-ins came from the scale". A tester asked five
