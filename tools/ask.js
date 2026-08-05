@@ -14,18 +14,38 @@ const db = new DatabaseSync(path.join(__dirname, "..", "demo", "health.db"),
                             { readOnly: true });
 const query = (sql) => db.prepare(sql).all();
 
+/* BLOCK-LEVEL ELEMENTS BECOME NEWLINES, not nothing.
+ *
+ * `.chron` is `display: block` in the page, so a chronology renders as its own
+ * indented line in the browser. Stripping the tag without replacing it ran the
+ * sentences together - "kept a reason each time.2030-05-20 steps tightened" -
+ * and a tester reading this CLI reported it as a formatting bug in the
+ * PRODUCT. It was a bug in this inspector, and a misleading inspector produces
+ * false findings, which cost more than the formatting would have. */
 const strip = (h) => h.replace(/<q>/g, '"').replace(/<\/q>/g, '"')
   .replace(/<br\s*\/?>/g, "\n")
+  .replace(/<(span|div|p)\b[^>]*class="[^"]*\b(chron|view)\b[^"]*"[^>]*>/g, "\n")
+  .replace(/<\/(span|div|p)>\s*(?=<(span|div|p)\b[^>]*class="[^"]*chron)/g, "\n")
   .replace(/<[^>]+>/g, "").replace(/&amp;/g, "&")
   .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
+/* Wraps each LINE, preserving the breaks the answer asked for.
+ *
+ * This split on all whitespace, so the newlines `strip` had just produced from
+ * `<br>` were swallowed and four dated plan changes arrived as one paragraph.
+ * The page renders them on separate lines; only this inspector ran them
+ * together, and a tester reported it as a formatting bug in the product. */
 function wrap(s, w = 76, ind = "    ") {
-  const out = []; let line = "";
-  for (const word of s.split(/\s+/)) {
-    if (line && (line + " " + word).length > w - ind.length) { out.push(ind + line); line = word; }
-    else line = line ? line + " " + word : word;
+  const out = [];
+  for (const para of String(s).split("\n")) {
+    let line = "";
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      if (line && (line + " " + word).length > w - ind.length) {
+        out.push(ind + line); line = word;
+      } else line = line ? line + " " + word : word;
+    }
+    if (line) out.push(ind + line);
   }
-  if (line) out.push(ind + line);
   return out.join("\n");
 }
 

@@ -1672,6 +1672,35 @@ const Ask = (() => {
      * been on target for steps" is genuinely ambiguous between the steps goal
      * and the steps metric, and saying so is true and useless: neither can
      * count a streak, so which one was meant does not matter. */
+    /* Comparison joins streak here, and for the same reason: NO intent
+     * declares `comparison`, so which one would have won is irrelevant. Left
+     * until after scoring, "how does june compare to may" matched nothing
+     * strongly enough and fell to the generic did-not-understand, which is
+     * true and unhelpful when the real answer is that a difference is a
+     * number this page may not produce. */
+    if (qualifiers(q).comparison) {
+      const periodic = qualifiers(q).window ||
+        /\b(month|week|year|versus last|vs last)\b/.test(q);
+      return {
+        kind: "refusal",
+        refusal: "comparison",
+        text: periodic
+          ? "That asks for a comparison of two periods, and I cannot make one. " +
+            "Comparing two periods means computing a difference, and a " +
+            "difference is a number this page would have made up. The engine " +
+            "emits no period comparison; that is a gap in the engine, and the " +
+            "honest thing is to say so rather than subtract two figures and " +
+            "present the result as a finding."
+          : "That asks for a comparison, and I cannot make one. Setting two " +
+            "groups against each other means deciding what counts as the " +
+            "difference between them, and that decision would be mine rather " +
+            "than the engine's. Counting each group is a different question " +
+            "and one this page can answer - ask for the count and name the " +
+            "group, and you will get both figures without a verdict attached.",
+        sql: null,
+        matched: null,
+      };
+    }
     if (qualifiers(q).streak) {
       return {
         kind: "refusal",
@@ -1761,13 +1790,14 @@ const Ask = (() => {
             why: "Picking out the largest or the best means selecting a row, " +
                  "which this answer does not do. It would have given you a " +
                  "count or a total instead, which is not what you asked." }
-      : qual.comparison
-        ? { what: "a comparison",
-            why: "Comparing two periods means computing a difference, and a " +
-                 "difference is a number this page would have made up. The " +
-                 "engine emits no period comparison; that is a gap in the " +
-                 "engine, and the honest thing is to say so rather than " +
-                 "subtract two figures and present the result as a finding." }
+      /* The reason has to match the comparison actually asked for. This
+       * always said "comparing two PERIODS", so "runs self reported versus
+       * tracked by device" - a comparison of categories, with no period in
+       * it - was refused with a sentence about time. A refusal that misstates
+       * its own reason sends the reader to correct the wrong thing, which is
+       * worse than a terse one. */
+      /* No `comparison` branch: handled before the intents, like `streak`,
+       * because no intent declares it. */
       : qual.aggregate && !h.aggregate
         ? { what: `<em>${esc(qual.aggregate)}</em>`,
             why: "A total or an average is a number that appears in no row. " +
