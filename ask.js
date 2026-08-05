@@ -216,6 +216,25 @@ const Ask = (() => {
       out.aggregate = null;
     if (/^(total|totals)$/.test(out.aggregate || "") && /\bhow many\b/.test(q))
       out.aggregate = null;
+    /* THE THIRD WORD IN THIS SET TO CARRY A SECOND MEANING, and the one the
+     * record itself uses: `per week` is a PERIOD DESCRIPTOR at least as often
+     * as a request to average, because that is how the goals are named. "Walk
+     * 77k steps a week" is a goal whose period IS a week, and the engine
+     * already holds its standing in a row.
+     *
+     * So "how is the steps per week goal" refused with "adding up the values
+     * is arithmetic the engine has not done", while "how is the steps goal"
+     * answered 85% from `goal_progress`. Nothing was being added up; the
+     * qualifier was describing the goal, not asking for a computation.
+     *
+     * NARROW ON PURPOSE. It takes the literal word `goal`, and it stands down
+     * if any real aggregate word is also present - because "how many steps
+     * per week do I average" IS asking for a mean this page will not compute,
+     * and `per week` is the leftmost match in that string, so disarming it
+     * unconditionally would let the refusal be skipped. */
+    if (out.aggregate === "per week" && /\bgoals?\b/.test(q)
+        && !/\b(total|totals|altogether|average|averages|sum|typical)\b/.test(q))
+      out.aggregate = null;
     return out;
   }
 
@@ -537,8 +556,9 @@ const Ask = (() => {
       const g = matchGoal(q, query);
       if (g) {
         const sql = "SELECT slug, title, metric, period, target, counted, " +
-                    "progress_pct, breach, lifecycle_status, achievement_status, " +
-                    "verification, tracker FROM goal_progress WHERE slug = " +
+                    "observed, progress_pct, breach, lifecycle_status, " +
+                    "achievement_status, verification, tracker " +
+                    "FROM goal_progress WHERE slug = " +
                     `'${g.slug.replace(/'/g, "''")}'`;
         const r = query(sql)[0];
         if (r.target === null) {
@@ -553,24 +573,67 @@ const Ask = (() => {
             sql,
           };
         }
+        /* A LEVEL goal carries `observed` where a flow goal carries `counted`
+         * (contract 30), and which side holds the number is the engine's own
+         * way of saying which shape this is. Before this read it, "Down to 78
+         * kg, unhurried" rendered as "no number" while `goal_progress` held
+         * `observed` 75.5 against a 78 ceiling and marked the goal `achieved`.
+         * That is worse than a refusal: the engine reached a verdict and the
+         * page reported silence, so a reader concluded the record could not
+         * say - which is the substitution this page exists to not do.
+         *
+         * RECORDED ink, not derived. `observed` is the latest weigh-in
+         * transcribed, the same number the weight intent above prints with
+         * `N.rec`; the engine SELECTED it rather than computing it, and
+         * derived ink would claim arithmetic that did not happen. */
+        const level = r.observed !== null && r.observed !== undefined;
+        const unit = r.metric === "kg" ? "kg" : r.metric;
+        const head = level
+          ? `${N.rec(r.observed, unit, 1)} against a target of ` +
+            `${N.rec(r.target, unit, 1)}`
+          : `${N.quantity(r.counted, r.target, r.metric, r.period)}`;
+        /* A PERCENTAGE IS NOT ALWAYS THERE, and printing `N.pct(null)` put the
+         * word for an absent number where a figure belongs. A ceiling has no
+         * percentage by design (#200): "83% of your calorie cap" reads as
+         * praise for being 17% under it on one day and as nothing at all on
+         * the day it is breached. The status is what the engine emits for
+         * these, and it is the sentence's subject rather than a suffix. */
+        const pct = r.progress_pct !== null && r.progress_pct !== undefined
+          ? `, ${N.pct(r.progress_pct)}` : ``;
+        /* OVER or UNDER, from the engine's own word. `breach` is `over` on a
+         * ceiling and `under` on a floor, and this said "under the line"
+         * for both - so a calorie cap exceeded by 270 kcal was reported as
+         * falling short of it, which is the opposite fact. */
+        const side = r.breach === "over" ? `, and it is over the line.`
+          : r.breach ? `, and it is under the line.` : `.`;
         return {
-          text: `<em>${esc(r.title)}</em>: ` +
-                `${N.quantity(r.counted, r.target, r.metric, r.period)}, ` +
-                `${N.pct(r.progress_pct)}. The engine marks it ` +
+          text: `<em>${esc(r.title)}</em>: ${head}${pct}. The engine marks it ` +
                 `<code>${esc(r.achievement_status || r.lifecycle_status)}</code>` +
-                (r.breach ? `, and it is under the line.` : `.`),
+                side,
           sql,
         };
       }
-      const sql = "SELECT slug, title, target, progress_pct, breach, " +
-                  "lifecycle_status, achievement_status FROM goal_progress " +
-                  "ORDER BY (breach IS NULL), progress_pct";
+      const sql = "SELECT slug, title, target, counted, observed, " +
+                  "progress_pct, breach, lifecycle_status, achievement_status " +
+                  "FROM goal_progress ORDER BY (breach IS NULL), progress_pct";
       const rs = query(sql);
       if (!rs.length) return { text: "No goals are declared.", sql };
       const under = rs.filter(r => r.breach);
+      /* "NO NUMBER" MEANT THREE DIFFERENT THINGS and said them all the same
+       * way: a goal nothing can score, a ceiling that has no percentage by
+       * design, and a level goal the engine scored and this did not read.
+       * Only the first is genuinely numberless. The other two had a verdict
+       * in `achievement_status` - `achieved` on a weight goal that had been
+       * met - and reporting them as silence is the page withholding what the
+       * record said, not the record failing to say it.
+       *
+       * So the fallback is the engine's own status where there is one, and
+       * "no number" only where the engine emitted neither. */
       const parts = rs.map(r => `<em>${esc(r.title)}</em>` +
         (r.progress_pct !== null ? ` (${N.pct(r.progress_pct)})`
-                                 : " (no number)"));
+          : r.achievement_status
+            ? ` (<code>${esc(r.achievement_status)}</code>)`
+            : " (no number)"));
       return {
         text: `${N.derCount(rs.length)} goals: ` + N.listify(parts) + ". " +
               (under.length

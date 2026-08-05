@@ -207,14 +207,35 @@ for (const q of QUALIFIED) {
 {
   const t = (q) => strip(Ask.answer(q, query).text || "");
 
+  /* THE MAGNITUDES ARE READ FROM THE FIXTURE, NOT TYPED IN.
+   *
+   * These said `26 from scale` and `32 of 60`, and vitai's #274 added a
+   * breaching day and a quiet week to `examples/demo` - which this repo
+   * builds its demo from on purpose, so that the lens moves when the engine
+   * does. Six tests then failed for the one reason that is not a defect: the
+   * upstream fixture grew. A test that has to be retyped every time the
+   * fixture is edited is a test that will eventually be retyped WITHOUT
+   * being reread, and the property it guards - that a scoped count is
+   * scoped, and that unknown-origin counts nulls rather than the total -
+   * does not depend on any of these numbers being what they are today. */
+  const wTotal = query(
+    "SELECT COUNT(*) n FROM weight WHERE kg IS NOT NULL")[0].n;
+  const wScale = query(
+    "SELECT COUNT(*) n FROM weight WHERE kg IS NOT NULL AND origin = 'scale'")[0].n;
+  const wNone = query(
+    "SELECT COUNT(*) n FROM weight WHERE kg IS NOT NULL AND origin IS NULL")[0].n;
+
   ok("a scoped count is scoped",
-     /26 from scale/.test(t("how many weigh ins came from the scale")),
+     new RegExp(`${wScale} from scale`).test(
+       t("how many weigh ins came from the scale")) && wScale !== wTotal,
      t("how many weigh ins came from the scale").slice(0, 70));
   ok("unknown origin counts the nulls, not the total",
-     /32 of 60/.test(t("how many weigh-ins have unknown origin")),
+     new RegExp(`${wNone} of ${wTotal}`).test(
+       t("how many weigh-ins have unknown origin")) && wNone !== wTotal,
      t("how many weigh-ins have unknown origin").slice(0, 70));
   ok("an unscoped count breaks down by the record's own origins",
-     /60 weigh-ins, by origin/.test(t("how many weigh ins are there")),
+     new RegExp(`${wTotal} weigh-ins, by origin`).test(
+       t("how many weigh ins are there")),
      t("how many weigh ins are there").slice(0, 70));
   ok("CONTROL: the default is still the latest reading",
      /last weigh-in is/.test(t("what do they weigh")));
@@ -251,8 +272,13 @@ for (const q of QUALIFIED) {
   ok("a window it cannot resolve is refused by name, not widened",
      /month or a year/.test(t("how many runs did i do lately")),
      t("how many runs did i do lately").slice(0, 70));
+  // Read from the fixture for the same reason as the weigh-in counts above:
+  // the number is not the property, and #274 moved it.
+  const nRuns = query(
+    "SELECT COUNT(*) n FROM sessions WHERE type = 'run'")[0].n;
   ok("CONTROL: unscoped still counts the whole record",
-     /28 run sessions/.test(t("how many runs did i do")));
+     new RegExp(`${nRuns} run sessions`).test(t("how many runs did i do")),
+     `expected ${nRuns}; got: ` + t("how many runs did i do").slice(0, 60));
   ok("CONTROL: a windowed TOTAL is still refused",
      k("what is my total distance in june") === "refusal");
   ok("plurals of every session type are recognised",
@@ -313,16 +339,33 @@ for (const q of QUALIFIED) {
 {
   const hr = strip(Ask.answer("did any sources disagree about my heart rate", query).text || "");
   const sleep = strip(Ask.answer("did any sources disagree about my sleep", query).text || "");
-  const kcal = strip(Ask.answer("did any sources disagree about calories", query).text || "");
+  const protein = strip(Ask.answer("did any sources disagree about protein", query).text || "");
   ok("two different metrics do not get the same answer", hr !== sleep,
      hr.slice(0, 60));
+  /* ASKED ABOUT CALORIES BEFORE, and the fixture stopped disagreeing about
+   * `kcal_in` when vitai's #274 rewrote `examples/demo`. The test was pinned
+   * to WHICH field the upstream fixture happens to conflict over, which is
+   * not the property: the property is that naming a metric scopes the answer
+   * to that metric and excludes the others. `protein_g` is what disagrees
+   * today, and the assertion below states the requirement it stands for -
+   * so if the fixture moves again this fails loudly with a readable reason
+   * rather than looking like a scoping regression. */
+  const disagreeing = query(
+    "SELECT field FROM resolution WHERE disagreed GROUP BY field").map(r => r.field);
+  ok("the fixture still exercises a scoped disagreement",
+     disagreeing.includes("protein_g"),
+     `fields that disagree: ${disagreeing.join(", ")}`);
   ok("a metric with a disagreement is scoped to it",
-     /kcal_in/.test(kcal) && !/protein_g/.test(kcal), kcal.slice(0, 70));
+     /protein_g/.test(protein) && !/kcal_in/.test(protein), protein.slice(0, 70));
   ok("a metric with none says so, and says what did disagree",
      /No two sources disagreed about/i.test(hr) && /did disagree over/i.test(hr),
      hr.slice(0, 80));
+  const nDisagreed = query(
+    "SELECT COUNT(*) n FROM resolution WHERE disagreed")[0].n;
   ok("CONTROL: unscoped still reports the whole record",
-     /18/.test(strip(Ask.answer("did any sources disagree", query).text || "")));
+     new RegExp(`\\b${nDisagreed}\\b`).test(
+       strip(Ask.answer("did any sources disagree", query).text || "")),
+     `expected ${nDisagreed}`);
 }
 
 /* ---- on-date: a stale claim about the record is worse than a missing one -
