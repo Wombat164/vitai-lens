@@ -1321,10 +1321,15 @@ const Ask = (() => {
     const h = best.handles || {};
     const blocked =
       (qual.window && !h.window
+        /* Name the window the reader actually gave. This said "let it read as
+         * your week" whatever the qualifier was, so asking about June was
+         * refused with a sentence about a week - a refusal that misstates its
+         * own reason, which sends the reader to correct the wrong thing. */
         ? { what: `the time window <em>${esc(qual.window)}</em>`,
             why: "I can count rows in a window, but this answer is not one " +
                  "that scopes - so rather than quietly report the whole " +
-                 "record and let it read as your week, I am stopping here." }
+                 `record and let it read as ${esc(qual.window)}, I am ` +
+                 "stopping here." }
       : qual.superlative && !h.superlative
         ? { what: `<em>${esc(qual.superlative)}</em>`,
             why: "Picking out the largest or the best means selecting a row, " +
