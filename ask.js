@@ -222,6 +222,10 @@ const Ask = (() => {
             "weigh-in - picking a row out, which is allowed where a total is not<br>" +
             "<strong>best efforts</strong> best 10k, fastest 5k - a rolling " +
             "window inside a run, which a distance and a duration cannot answer<br>" +
+            "<strong>weekly volume</strong> how many km a week do I run, how " +
+            "much did I train each week, how far did I run last week - the " +
+            "engine buckets and totals these, so they are rows rather than " +
+            "arithmetic done here<br>" +
             "<strong>the plan</strong> how are the goals going, did I change " +
             "my plan and why, how did the weeks score<br>" +
             "<strong>where and when</strong> what route do I run, what was " +
@@ -1011,6 +1015,136 @@ const Ask = (() => {
       sql: [sql, allSql],
     };
   }, { superlative: true });
+
+  /* Weekly training volume, from `session_weeks` (contract 28).
+   *
+   * THIS IS THE GAP THIS REPO FOUND, FILLED. Until now the honest answer to
+   * "how many km a week do I run" was a refusal, and the refusal said why: "I
+   * will not total the distance, because that would be a quantity computed
+   * here rather than one the engine emitted". Every client hit that, and the
+   * engine's own issue records that the conformance client got the totals
+   * wrong twice before anyone noticed. The engine emits them now, so the lens
+   * renders them and still computes nothing: every figure below is a column.
+   *
+   * FIRST INTENT TO DECLARE `window`. Nothing else here can scope to a period,
+   * which is why "how far did I run last week" refused rather than answered. A
+   * week is not a window this has to compute - it is the grain the table is
+   * already in, so scoping to one is a WHERE clause. Anything coarser is not,
+   * and is refused below rather than approximated.
+   *
+   * "Last week" means the last week THE RECORD knows about, not the last week
+   * on a calendar. The engine settled that for builds (a build takes its
+   * viewpoint from the record's own last date) and the same reasoning applies
+   * to a reader: answering from today's date would silently report a stale
+   * record as an empty week. */
+  /* `session_weeks` carries what a SESSION has. A daily metric is a different
+   * table and a different question, and the first cut of this took "how many
+   * steps did i do last week" and answered about running - a wrong answer that
+   * looked like a right one, which is the failure this whole page is built to
+   * avoid. Caught by the test suite rather than by reading it back. */
+  const SESSION_METRICS = new Set(["distance_km", "avg_hr"]);
+
+  intent("session-weeks", (q, s) => {
+    if (!/\b(per week|a week|each week|every week|weekly|last week|this week|past week)\b/.test(q))
+      return 0;
+    if (s.metric && !SESSION_METRICS.has(s.metric)) return 0;
+    return has(q, "far", "distance", "km", "kilometre", "kilometres", "mileage",
+               "volume", "train", "trained", "training", "run", "ran", "ride",
+               "session", "sessions", "how much", "how many", "swim", "walk")
+      ? 8 : 0;
+  }, (q, s, query) => {
+    /* A window this table cannot honour. Refusing by name beats answering
+     * about weeks and letting it read as a month. */
+    if (/\b(month|months|year|years|quarter)\b/.test(q)) {
+      return {
+        text: "The engine buckets sessions by <b>week</b>, and nothing in the " +
+              "read model buckets them by month or year. Rolling weeks up into " +
+              "a longer period is arithmetic, and it would be mine rather than " +
+              "the engine's - so this is a gap in vitai rather than something " +
+              "to approximate here.",
+        sql: null,
+      };
+    }
+
+    const lastOnly = /\b(last week|this week|past week)\b/.test(q);
+    const t = s.sessionType ? s.sessionType.replace(/'/g, "''") : null;
+    const where = [];
+    if (t) where.push("type = '" + t + "'");
+    if (lastOnly) {
+      where.push("week = (SELECT MAX(week) FROM session_weeks WHERE sessions > 0)");
+    } else {
+      where.push("sessions > 0");
+    }
+    const sql = "SELECT week, type, sessions, distance_km, duration_s " +
+                "FROM session_weeks WHERE " + where.join(" AND ") +
+                " ORDER BY week DESC, type" + (lastOnly ? "" : " LIMIT 12");
+    const rs = query(sql);
+
+    if (!rs.length) {
+      /* "Not that week" and "not ever" are different facts, and the first cut
+       * reported the second for the first: asked how far they walked last
+       * week, it said the record held no walk at all, which was false. An
+       * empty result is scoped by whatever the WHERE clause scoped. */
+      const everSql = "SELECT MAX(week) AS w FROM session_weeks WHERE sessions > 0" +
+                      (t ? " AND type = '" + t + "'" : "");
+      const ever = query(everSql)[0];
+      const label = t ? "<code>" + esc(t) + "</code> session" : "session";
+      if (lastOnly && ever && ever.w) {
+        const wkSql = "SELECT MAX(week) AS w FROM session_weeks WHERE sessions > 0";
+        const wk = query(wkSql)[0];
+        return {
+          text: "The most recent week the record holds, " + esc(wk.w) + ", has " +
+                "no " + label + ". The record does hold " + label + "s - the " +
+                "latest is in the week of " + esc(ever.w) + " - so this is that " +
+                "week being quiet, not the activity being absent.",
+          sql: [sql, everSql, wkSql],
+        };
+      }
+      return {
+        text: "No week in this record holds a " + label + " at all.",
+        sql: [sql, everSql],
+      };
+    }
+
+    const line = (r) =>
+      esc(r.week) + " <code>" + esc(r.type) + "</code> " +
+      N.derCount(r.sessions) + " " + N.plural(r.sessions, "session") +
+      (r.distance_km === null
+        ? " (no distance recorded)"
+        : ", " + N.der(r.distance_km, "km", 1));
+
+    /* An empty week is a fact and the engine emits a row for it, so the
+     * absence of a week from this list is never silence about that week. */
+    const zeroSql = "SELECT COUNT(*) AS n FROM session_weeks WHERE sessions = 0" +
+                    (t ? " AND type = '" + t + "'" : "");
+    const zero = query(zeroSql)[0];
+
+    return {
+      text: (lastOnly
+              ? "The most recent week the record holds, " + esc(rs[0].week) + ": "
+              : "Per week, most recent first: ") +
+            N.listify(rs.map(line)) + ". " +
+            "Every figure there is a row in <code>session_weeks</code> - the " +
+            "engine bucketed and totalled these, not this page. " +
+            (rs.some(r => r.distance_km === null)
+              ? "A missing distance is <b>absent, not zero</b>: strength work " +
+                "records no distance, and summing that as zero would report a " +
+                "training week as a week of no movement. "
+              : "") +
+            (zero && zero.n
+              ? "The record also holds " + N.derCount(zero.n) + " " +
+                N.plural(zero.n, "week") + " with no sessions. A week of zeros " +
+                "means <b>the record holds nothing for it</b>, which is not the " +
+                "same as the athlete having done nothing - telling those apart " +
+                "needs coverage, not this table."
+              : "") +
+            (lastOnly
+              ? " \"Last week\" here means the last week this record knows " +
+                "about, not the last week on a calendar."
+              : ""),
+      sql: [sql, zeroSql],
+    };
+  }, { window: true });
 
   /* ---- vetoes ------------------------------------------------------------
    * A question can contain a keyword this thing recognises and still be asking

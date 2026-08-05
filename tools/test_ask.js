@@ -60,6 +60,7 @@ const CANONICAL = {
   route: "what route do i run",
   weather: "what was the weather like",
   "best-effort": "what is my best 10k",
+  "session-weeks": "how many km a week do i run",
 };
 
 console.log("\nask\n");
@@ -94,9 +95,19 @@ for (const q of NONSENSE) {
  * Every one of these returned a confident paragraph about a DIFFERENT
  * question before the guard existed, which is the failure the whole design
  * claims to prevent. */
+/* "how much did i walk last week" WAS here, and moved to the grounded set when
+ * contract 28 landed. It was not deleted to make a build green: the assertion
+ * encoded a limitation rather than a rule. Nothing could scope to a period, so
+ * every window was unhonourable and refusing was the honest answer. The engine
+ * now emits a table whose grain IS the week, so scoping to one is a WHERE
+ * clause rather than arithmetic, and refusing would be the engine's own answer
+ * being withheld.
+ *
+ * The guard it was testing is still tested, twice over: "in june" is a window
+ * no table here has, and "last week" on STEPS is a week window on a metric
+ * sessions do not carry. Both still refuse. */
 const QUALIFIED = [
   "how many runs did i do in june",
-  "how much did i walk last week",
   "what is my average weekly mileage",
   "how does june compare to may",
   "how many steps did i do last week",
@@ -105,6 +116,32 @@ for (const q of QUALIFIED) {
   const a = Ask.answer(q, query);
   ok(`qualifier refused: "${q}"`, a.kind === "refusal",
      a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 70)}` : "");
+}
+
+/* ---- session-weeks: an empty result is scoped by whatever scoped it ------
+ * Asked how much they walked last week, the first cut said the record held no
+ * walk session AT ALL - true of that week, false of the record, and stated as
+ * though it were the second. Grounding cannot catch it: both sentences are
+ * made of numbers that came from rows. It needs an assertion about what the
+ * answer CLAIMS, which is what this is.
+ *
+ * The demo's latest week holds runs and no walks, and earlier weeks hold
+ * walks, so it exercises the distinction as long as that stays true - which
+ * the second assertion checks rather than assumes. */
+{
+  const a = Ask.answer("how much did i walk last week", query);
+  const text = strip(a.text || "");
+  const walkWeeks = query(
+    "SELECT COUNT(*) AS n FROM session_weeks WHERE type = 'walk' AND sessions > 0");
+  ok("the demo still exercises the quiet-week case",
+     Number(walkWeeks[0].n) > 0,
+     "no walk weeks in the demo, so this pair of tests proves nothing");
+  ok("a quiet week is not reported as an empty record",
+     a.kind === "answer" && !/no walk session at all/i.test(text),
+     `said: ${text.slice(0, 90)}`);
+  ok("and it says when the activity last happened",
+     a.kind === "answer" && /latest is in the week of/i.test(text),
+     `said: ${text.slice(0, 90)}`);
 }
 
 /* ---- grounding --------------------------------------------------------- */
@@ -145,7 +182,13 @@ const GROUND_QS = [...Object.values(CANONICAL),
                    "what happened on 2030-06-09", "how is the steps goal",
                    "what is the heaviest weigh-in", "hows my mood been",
                    "fastest 5k", "best marathon",
-                   "what is my hardest session", "can i run today"];
+                   "what is my hardest session", "can i run today",
+                   /* session-weeks, all three branches: the scoped week, a
+                    * scoped week the type is absent from, and the whole table
+                    * with a null distance in it. */
+                   "how far did i run last week",
+                   "how much did i walk last week",
+                   "how much did i train each week"];
 for (const q of GROUND_QS) {
   const a = Ask.answer(q, query);
   if (!a || a.kind !== "answer" || !a.sql) continue;

@@ -120,15 +120,22 @@ read it:
 
 **Theirs** - found by this client hitting a wall, which is what it is for:
 
-- [vitai#207](https://github.com/Wombat164/vitai/issues/207) The built
-  database is not a function of the record alone: `goal_progress` follows the
-  wall clock and the viewpoint is not recorded. It ships empty.
-- [vitai#208](https://github.com/Wombat164/vitai/issues/208) No weekly rollup
-  of sessions or distance, so every client computes the most ordinary chart
-  in the genre - and this one got it wrong twice before anyone noticed.
+- **CLOSED** [vitai#207](https://github.com/Wombat164/vitai/issues/207) The
+  built database is not a function of the record alone: `goal_progress`
+  followed the wall clock and the viewpoint was not recorded. It shipped
+  empty. Fixed at contract 23 - an unqualified build now takes its viewpoint
+  from the record's own last date, and `meta` records it.
+- **CLOSED** [vitai#208](https://github.com/Wombat164/vitai/issues/208) No
+  weekly rollup of sessions or distance, so every client computed the most
+  ordinary chart in the genre - and this one got it wrong twice before anyone
+  noticed. Fixed at contract 28: `session_weeks` holds sessions, distance and
+  duration per week per type, and the lens now answers *how many km a week do
+  I run* by reading it. **This is the loop working end to end** - the lens hit
+  the wall, the wall became an issue, the engine emitted the table, and the
+  refusal became an answer without a line of arithmetic moving into this repo.
 - [vitai#209](https://github.com/Wombat164/vitai/issues/209) What may a client
   show as a headline figure without inventing it? The four tiles this repo
-  had to delete.
+  had to delete. **Still open.**
 
 A third list, deliberately empty: things the lens works around. There are
 none, and there should never be any.

@@ -33,7 +33,7 @@ const contract = (() => {
 /* The same refusal the page makes, for the same reason: a brief generated
  * against the wrong contract would read as complete while silently dropping
  * whatever that contract added. */
-const BUILT_AGAINST_CONTRACT = "27";
+const BUILT_AGAINST_CONTRACT = "28";
 if (contract !== BUILT_AGAINST_CONTRACT) {
   console.error(
     `refused: this narrator was built against contract ${BUILT_AGAINST_CONTRACT}, ` +
