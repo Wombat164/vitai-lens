@@ -117,6 +117,35 @@ def main() -> int:
             check("the absent-is-not-zero note is shown",
                   "absent, not zero" in page.locator("#c-km + .hint").inner_text())
 
+            # The ask surface is a dock. These assert the DOCK, not the answer:
+            # the interaction tests below pass whether or not it ever opens,
+            # because Playwright can type into a panel translated off-screen.
+            def onscreen(sel):
+                b = page.locator(sel).bounding_box()
+                return b is not None and b["x"] < page.viewport_size["width"] - 8
+
+            check("the dock starts closed",
+                  page.locator("#ask-card").get_attribute("data-open") != "1"
+                  and not onscreen("#ask-dock"))
+            page.click("#ask-toggle")
+            page.wait_for_timeout(400)
+            check("the toggle opens it",
+                  page.locator("#ask-card").get_attribute("data-open") == "1"
+                  and onscreen("#ask-dock"))
+            check("opening moves focus to the input",
+                  page.evaluate("document.activeElement && document.activeElement.id")
+                  == "ask-input")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+            check("escape closes it", not onscreen("#ask-dock"))
+
+            # It must survive scrolling - that is the whole reason it is fixed.
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(200)
+            check("the handle stays put when the page scrolls",
+                  onscreen("#ask-toggle"))
+            page.evaluate("window.scrollTo(0, 0)")
+
             # An answer may carry a `view`, and a view is a picture of the rows
             # the answer already cited. Driving the real ask box is the only
             # way to know it renders: the unit tests exercise the answer

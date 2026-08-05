@@ -256,6 +256,63 @@
   /* The ask box. Typeset as an input and an answer, deliberately like every
      chat interface a reader has used, because the point is that it LOOKS like
      one and behaves differently at the edges: it refuses. */
+  /* ---- the ask dock -----------------------------------------------------
+     Fixed to the viewport so a question stays beside the chart that prompted
+     it. It OVERLAYS rather than reflows: pushing the page sideways would move
+     the very figure the reader is asking about, which is the one thing a
+     comparison cannot survive. */
+  :root { --dock-w: min(430px, 94vw); }
+  #ask-card { display: contents; }
+  #ask-toggle {
+    position: fixed; right: 0; top: 92px; z-index: 40;
+    writing-mode: vertical-rl; text-orientation: mixed;
+    padding: 14px 7px; border: 1px solid var(--border); border-right: 0;
+    border-radius: 10px 0 0 10px; cursor: pointer;
+    background: var(--surface-1); color: var(--ink-2);
+    font: 600 12px/1 system-ui, sans-serif; letter-spacing: .02em;
+    box-shadow: -6px 0 18px rgba(15,23,42,.07);
+    transition: transform .28s ease, color .15s;
+  }
+  #ask-toggle:hover { color: var(--series-1); }
+  #ask-toggle::before {
+    content: ""; position: absolute; inset: 0 auto auto 0;
+    width: 2px; height: 26px; border-radius: 0 0 0 10px;
+    background: linear-gradient(180deg, var(--series-1), var(--accent));
+  }
+  #ask-dock {
+    position: fixed; inset: 0 0 0 auto; z-index: 41;
+    width: var(--dock-w); height: 100dvh;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 16px 18px 20px;
+    background: var(--surface-1); border-left: 1px solid var(--border);
+    box-shadow: -22px 0 46px rgba(15,23,42,.13);
+    overflow-y: auto; overscroll-behavior: contain;
+    transform: translateX(100%);
+    transition: transform .28s ease;
+  }
+  #ask-card[data-open="1"] #ask-dock { transform: none; }
+  #ask-card[data-open="1"] #ask-toggle {
+    transform: translateX(calc(-1 * var(--dock-w)));
+  }
+  .dock-head { display: flex; align-items: baseline;
+               justify-content: space-between; gap: 10px; }
+  .dock-head h2 { margin: 0; }
+  #ask-close {
+    border: 0; background: none; cursor: pointer; padding: 4px;
+    color: var(--ink-mut); font: 600 12px system-ui, sans-serif;
+  }
+  #ask-close:hover { color: var(--series-1); }
+  /* Newest answer first, so the dock does not have to be scrolled to read the
+     thing just asked. */
+  #ask-out { flex: 1; min-height: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    #ask-dock, #ask-toggle { transition: none; }
+  }
+  @media (max-width: 560px) {
+    :root { --dock-w: 100vw; }
+    #ask-toggle { top: auto; bottom: 14px; writing-mode: horizontal-tb;
+                  border-radius: 10px 0 0 10px; padding: 9px 12px; }
+  }
   #ask-form { display: flex; gap: 8px; margin: 2px 0 10px; }
   #ask-input {
     flex: 1; font: inherit; font-size: 14px; padding: 8px 12px;
@@ -348,18 +405,31 @@
         will not vouch for</span>
     </p>
     <div class="brief" id="brief"></div></div>
-  <div class="card" id="ask-card"><h2>Ask it something</h2>
-    <p class="hint">a natural-language interface to the same tables, and not a
-      language model - it maps your question onto a fixed set of queries and
-      <strong>refuses when it cannot</strong>, rather than producing something
-      that reads like an answer. Prior art in <code>docs/prior-art.md</code>.</p>
-    <form id="ask-form" autocomplete="off">
-      <input id="ask-input" type="text" spellcheck="false"
-             placeholder="how are the goals going?" aria-label="ask a question">
-      <button class="btn" type="submit">Ask</button>
-    </form>
-    <div class="chips" id="ask-chips"></div>
-    <div class="brief" id="ask-out"></div></div>
+  <!-- The ask surface is a dock rather than a card in the flow. A question is
+       asked ABOUT what is on screen, and answering it by scrolling the reader
+       away from the chart they were looking at breaks the comparison they were
+       making. Fixed to the viewport, it stays beside the evidence. -->
+  <div id="ask-card">
+    <button id="ask-toggle" type="button" aria-expanded="false"
+            aria-controls="ask-dock">Ask it something</button>
+    <aside id="ask-dock" aria-label="Ask it something">
+      <div class="dock-head">
+        <h2>Ask it something</h2>
+        <button id="ask-close" type="button" aria-label="close">close</button>
+      </div>
+      <p class="hint">a natural-language interface to the same tables, and not a
+        language model - it maps your question onto a fixed set of queries and
+        <strong>refuses when it cannot</strong>, rather than producing something
+        that reads like an answer. Prior art in <code>docs/prior-art.md</code>.</p>
+      <form id="ask-form" autocomplete="off">
+        <input id="ask-input" type="text" spellcheck="false"
+               placeholder="how are the goals going?" aria-label="ask a question">
+        <button class="btn" type="submit">Ask</button>
+      </form>
+      <div class="chips" id="ask-chips"></div>
+      <div class="brief" id="ask-out"></div>
+    </aside>
+  </div>
   <div class="cards">
     <div class="card"><h2>Weight</h2>
       <p class="hint">every weigh-in the record holds, positioned by date, drawn
@@ -1116,8 +1186,29 @@ function wireAsk(db) {
   const form = $("#ask-form"), input = $("#ask-input"), out = $("#ask-out");
   const chips = $("#ask-chips");
   if (!form) return;
-  $("#ask-card").hidden = false;
+  const card = $("#ask-card");
+  card.hidden = false;
   out.innerHTML = "";
+
+  /* The dock opens on use and stays open. Closing is explicit - a panel that
+     shut itself after each answer would make a follow-up cost two actions,
+     and following up is most of how this thing gets used. */
+  const setOpen = (open) => {
+    card.dataset.open = open ? "1" : "0";
+    $("#ask-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) input.focus();
+  };
+  setOpen(false);
+  $("#ask-toggle").addEventListener("click",
+    () => setOpen(card.dataset.open !== "1"));
+  $("#ask-close").addEventListener("click", () => {
+    setOpen(false); $("#ask-toggle").focus();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && card.dataset.open === "1") {
+      setOpen(false); $("#ask-toggle").focus();
+    }
+  });
 
   const EXAMPLES = [
     "how are the goals going?",
@@ -1147,6 +1238,7 @@ function wireAsk(db) {
   function ask(question) {
     const a = Ask.answer(question, (sql) => rows(db, sql));
     if (!a) return;
+    setOpen(true);          /* asking IS the gesture that opens it */
     const q = document.createElement("p");
     q.className = "asked";
     q.innerHTML = "<b>asked</b> " + question.replace(/[<>&]/g,
