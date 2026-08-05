@@ -632,10 +632,33 @@ const Ask = (() => {
   intent("conflicts", (q, s) => has(q, "disagree", "conflict", "contradict",
                                     "differ", "mismatch", "argue") ? 7 : 0,
     (q, s, query) => {
+      /* THE NAMED METRIC IS USED, and it is a WHERE clause rather than
+       * anything computed. This ignored it: asking about heart-rate
+       * disagreements and about sleep disagreements returned byte-identical
+       * output, listing fields that included neither. An answer that quietly
+       * widens the question to the whole record is the silent-substitution
+       * shape - it reads as an answer and is about something else. */
+      const scoped = s.metric ? " AND field = " + sqlStr(s.metric) : "";
       const sql = "SELECT date, dataset, field, chosen_source, chosen_value, " +
                   "over_source, over_value, independent, compares FROM resolution " +
-                  "WHERE disagreed = 1 ORDER BY date";
+                  "WHERE disagreed = 1" + scoped + " ORDER BY date";
       const rs = query(sql);
+      if (!rs.length && s.metric) {
+        /* "None for that field" and "none anywhere" are different facts, so
+         * the second query is what lets this say which one it means. */
+        const anySql = "SELECT DISTINCT field FROM resolution WHERE disagreed = 1";
+        const any = query(anySql);
+        return {
+          text: `No two sources disagreed about <code>${esc(s.metric)}</code>.` +
+                (any.length
+                  ? ` They did disagree over ` +
+                    N.listify(any.map(r => `<code>${esc(r.field)}</code>`)) +
+                    `, so this is that field being uncontested rather than the ` +
+                    `record holding no disagreements.`
+                  : ``),
+          sql: [sql, anySql],
+        };
+      }
       if (!rs.length) {
         return { text: "No two sources disagreed anywhere in this record.", sql };
       }

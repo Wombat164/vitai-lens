@@ -41,9 +41,18 @@ than the design did:
 
 Every phase below is that sentence, applied somewhere.
 
-## Already done (2026-08-05)
+## Status
 
-Three routing fixes landed the same day, all three found by the athletes:
+**Done** (2026-08-05): the three routing fixes below, all of Phase 2, Phase
+3.2, and Phase 3.3 - which turned out to be a false positive hiding a real
+bug, recorded in its own section.
+
+**Open**: Phase 1, Phase 3.1, 3.4 and 3.5, all of Phase 4, and the engine
+track.
+
+### The three routing fixes
+
+All three found by the athletes:
 
 - **A goal title is not a request for its dataset.** `session-weeks` matched
   `a week`, and a goal here is titled "Build to 30 km a week, injury-free", so
@@ -76,22 +85,22 @@ with the filter silently dropped.*
 
 ## Phase 2: stop the keyword misfires
 
-**2.1 `mean` as a verb is not an average.** *Repro: "pain is 0 now, doesnt that
+**2.1 DONE. `mean` as a verb is not an average.** *Repro: "pain is 0 now, doesnt that
 mean im healed" and "no I mean specifically the weight measurements" both
 refuse with the arithmetic boilerplate.* Decide it syntactically - "that mean",
 "I mean", "does X mean" are verbs; "the mean", "mean of" are nouns.
 
-**2.2 `total` next to a countable noun is a count, and counting is legal.**
+**2.2 DONE. `total` next to a countable noun is a count, and counting is legal.**
 *Repro: "how many total sessions have I logged" refuses; the rule that counting
 rows is permitted is stated in RULES.md and demonstrated one question later.*
 
-**2.3 "most recent" is a selection, not an aggregate.** *Repro: "whats my most
+**2.3 DONE. "most recent" is a selection, not an aggregate.** *Repro: "whats my most
 recent run" refuses as a superlative; "whats my longest run" answers, and its
 own text says selecting the largest is allowed. Selecting the latest is the
 same operation.* Fixing this also gives the record its most basic query: what
 did I just do.
 
-**2.4 "right now" must not turn a supported question into a refusal.** *Repro:
+**2.4 DONE. "right now" must not turn a supported question into a refusal.** *Repro:
 "am I restricted from anything right now" refuses as a judgement; without those
 two words it answers correctly, and the help text lists it as supported.* The
 record's own horizon is the answer to "now" - the same reasoning `session-weeks`
@@ -140,14 +149,21 @@ the first that could, and this is the second.
 from the scale" returns "the last weigh-in is 75.9 kg", as does every other
 weight question.* It is a fixed template wearing an answer's clothes.
 
-**3.2 `conflicts` filters by the metric named.** *Repro: heart-rate and sleep
+**3.2 DONE. `conflicts` filters by the metric named.** *Repro: heart-rate and sleep
 disagreement questions return byte-identical output, listing fields that
 include neither.*
 
-**3.3 `on-date` includes sessions.** *Repro: "how far did I run on 2030-06-24"
-returns steps, sleep, resting HR and mood, and no run - on the date the injury
-log names as onset.* Athlete 2 called this the one thing to fix first, and the
-reason is that it is the single date an anxious person checks.
+**3.3 WITHDRAWN as reported, and it found something else.** The finding was
+that `on-date` never surfaces sessions. **It does** - there was simply no
+session on the date the tester picked, and they inferred one existed because
+the sessions *range* spanned it. Verifying before building is what caught it.
+
+What verifying found instead was real: the answer claimed *"for which it
+declares no scale"* unconditionally, and contract 26 had made that false - the
+demo carries `nrs-0-10` on the very rows the sentence denied. A stale claim
+ABOUT the record is worse than a missing one, because a reader cannot tell it
+from a live fact. Fixed, along with three answers that slipped into the third
+person about the reader's own record.
 
 **3.4 A streak question refuses instead of substituting.** *Repro: "how many
 weeks in a row have I been on target for steps" returns the latest single-week

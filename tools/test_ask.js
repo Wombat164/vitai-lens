@@ -164,6 +164,25 @@ for (const q of QUALIFIED) {
      /longest run in the record/i.test(said("what is my longest run")));
 }
 
+/* ---- conflicts honours the metric it was asked about --------------------
+ * Two questions naming different metrics returned byte-identical output,
+ * listing fields that included neither. Quietly widening a question to the
+ * whole record reads as an answer and is about something else. */
+{
+  const hr = strip(Ask.answer("did any sources disagree about my heart rate", query).text || "");
+  const sleep = strip(Ask.answer("did any sources disagree about my sleep", query).text || "");
+  const kcal = strip(Ask.answer("did any sources disagree about calories", query).text || "");
+  ok("two different metrics do not get the same answer", hr !== sleep,
+     hr.slice(0, 60));
+  ok("a metric with a disagreement is scoped to it",
+     /kcal_in/.test(kcal) && !/protein_g/.test(kcal), kcal.slice(0, 70));
+  ok("a metric with none says so, and says what did disagree",
+     /No two sources disagreed about/i.test(hr) && /did disagree over/i.test(hr),
+     hr.slice(0, 80));
+  ok("CONTROL: unscoped still reports the whole record",
+     /18/.test(strip(Ask.answer("did any sources disagree", query).text || "")));
+}
+
 /* ---- on-date: a stale claim about the record is worse than a missing one -
  * This said "for which it declares no scale" unconditionally, and contract 26
  * had made it false: the demo carries `nrs-0-10` on the very rows it denied. */
