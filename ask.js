@@ -1143,6 +1143,15 @@ const Ask = (() => {
                 "about, not the last week on a calendar."
               : ""),
       sql: [sql, zeroSql],
+      /* A VIEW IS A RENDERING OF THE CITED ROWS, NEVER A SECOND SOURCE.
+       * `sql: 0` names which of the cited queries it draws, so a chart cannot
+       * show a figure the answer did not also cite and the trace button did
+       * not also run. One week is a table - a bar chart of a single bar is a
+       * worse table - and several weeks are bars. */
+      view: lastOnly
+        ? { kind: "table", sql: 0 }
+        : { kind: "bars", sql: 0, x: "week", y: "distance_km", by: "type",
+            unit: "km" },
     };
   }, { window: true });
 

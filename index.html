@@ -198,6 +198,13 @@
     text-underline-offset: 3px;
   }
   .msg .trace:hover { color: var(--series-1); }
+  /* An answer's view sits between the sentence and the trace button, so the
+     order on screen is claim, picture, rows - each one checkable against the
+     next. It scrolls rather than shrinking: a bar chart squeezed to phone
+     width stops being readable before it stops being drawn. */
+  .msg .view { margin: 10px 0 2px; overflow-x: auto; }
+  .msg .view table { font-size: 11.5px; }
+  .msg .view .legend { margin-top: 6px; }
   .msg .rows { margin-top: 8px; overflow-x: auto; }
   .msg .rows pre {
     margin: 0 0 6px; font-size: 11px; color: var(--ink-mut); white-space: pre-wrap;
@@ -684,49 +691,80 @@ function roundedTop(x, y, w, h, r) {
 //    waiting to happen. Weeks now come from `verdicts.week`, which is the
 //    engine's own bucketing, exposed.
 const TYPE_COLORS = ["--series-1", "--series-2", "--accent", "--info"];
+/* Both weekly charts read `session_weeks` (contract 28).
+ *
+ * THIS FUNCTION USED TO BREAK THE ONE RULE. It summed distance in JS, counted
+ * sessions per type in JS, and re-derived the week boundaries itself by
+ * walking `verdicts` for the latest week starting on or before each date.
+ * Totals, counts and re-bucketing: three of the things RULES.md names, in the
+ * chart that vitai#208 was filed about.
+ *
+ * It was not producing wrong numbers - checked cell by cell against the
+ * engine's table on this demo, and all 26 agreed. That is the point rather
+ * than a reprieve: it was a SECOND IMPLEMENTATION that happened to agree, and
+ * a second implementation that happens to agree is the exact condition under
+ * which this chart got its totals wrong twice before anyone noticed.
+ *
+ * One place the two genuinely differed: `s.distance_km || 0` coerced a null
+ * distance to zero, and the engine deliberately emits null. Ten cells in this
+ * demo carry one. A strength week therefore drew as a week of no movement,
+ * which is the absent-is-not-zero rule failing in the flattering direction. */
 function weeklyCharts(db) {
-  const sess = rows(db, "SELECT date, distance_km, type FROM sessions ORDER BY date");
-  // The engine's own week keys. Anything outside them is not bucketed here.
-  const engineWeeks = rows(db, "SELECT DISTINCT week FROM verdicts ORDER BY week")
-    .map(r => r.week);
-  if (!engineWeeks.length || !sess.length) return;
-  const bucket = (d) => {           // latest engine week starting on or before d
-    let hit = null;
-    for (const wk of engineWeeks) if (wk <= d) hit = wk; else break;
-    return hit;
-  };
-  // Ordered by how often the type actually occurs, so the athlete's main
-  // activity takes the primary brand colour. Sorting alphabetically handed
-  // teal to whichever type came first in the alphabet and painted the dominant
-  // one amber, which made the chart read as though the rare thing mattered.
-  const counts = new Map();
-  for (const s of sess) counts.set(s.type, (counts.get(s.type) || 0) + 1);
-  const types = [...counts.keys()].sort((a, b) =>
-    counts.get(b) - counts.get(a) || String(a).localeCompare(String(b)));
-  const byWeek = new Map(engineWeeks.map(wk => [wk, { km: 0, n: new Map() }]));
-  let unbucketed = 0;
-  for (const s of sess) {
-    const wk = bucket(s.date);
-    if (wk == null) { unbucketed++; continue; }
-    const b = byWeek.get(wk);
-    b.km += s.distance_km || 0;
-    b.n.set(s.type, (b.n.get(s.type) || 0) + 1);
-  }
-  // Sessions before the first week the engine judged are STATED, not dropped.
-  if (unbucketed) {
+  const wkRows = rows(db,
+    "SELECT week, type, sessions, distance_km FROM session_weeks ORDER BY week, type");
+  if (!wkRows.length) return;
+
+  // The engine's weeks, from the engine's own table - including the ones
+  // holding nothing, which is why a gap now draws as a gap rather than being
+  // absent from the axis.
+  const weeks = [...new Set(wkRows.map(r => r.week))].sort();
+
+  /* Ordered by how often the type occurs, so the athlete's main activity takes
+   * the primary brand colour; alphabetical order handed teal to whatever came
+   * first and painted the dominant activity amber. The ordering figure is
+   * never displayed - it decides a colour, not a claim - and it is a SUM the
+   * database does rather than one this page does. */
+  const types = rows(db,
+    "SELECT type, SUM(sessions) AS n FROM session_weeks WHERE sessions > 0 " +
+    "GROUP BY type ORDER BY n DESC, type").map(r => r.type);
+
+  const cell = new Map(wkRows.map(r => [r.week + "|" + r.type, r]));
+  const km = (wk) => wkRows.filter(r => r.week === wk && r.distance_km !== null);
+
+  /* A week whose sessions recorded no distance has NO BAR, not a zero one.
+   * The engine says null; drawing that as zero would say the athlete did not
+   * move, when what happened is that nothing measured how far. */
+  barChart($("#c-km"), weeks.map(wk => {
+    const parts = km(wk);
+    return {
+      week: wk,
+      total: parts.length ? parts.reduce((a, r) => a + r.distance_km, 0) : 0,
+      parts: parts.map((r) => ({ name: r.type, v: r.distance_km,
+                                    color: TYPE_COLORS[types.indexOf(r.type) % TYPE_COLORS.length] })),
+    };
+  }), "--series-1", "km", v => fmt(v, 1));
+
+  barChart($("#c-sess"), weeks.map(wk => ({
+    week: wk,
+    total: types.reduce((a, t) => a + ((cell.get(wk + "|" + t) || {}).sessions || 0), 0),
+    parts: types.map((t, i) => ({ name: t,
+                                  v: (cell.get(wk + "|" + t) || {}).sessions || 0,
+                                  color: TYPE_COLORS[i % TYPE_COLORS.length] })),
+  })), "--series-1", "sessions", v => fmt(v, 0));
+
+  /* Coverage is the strongest unmarked axis in visual-language.md, and these
+   * bars are where it bites: a partly-logged week draws exactly like a
+   * complete one. Saying so beneath the chart is not a fix, and it is better
+   * than the chart implying a completeness it cannot know. */
+  const noDist = rows(db,
+    "SELECT COUNT(*) AS n FROM session_weeks WHERE distance_km IS NULL AND sessions > 0")[0];
+  if (noDist && noDist.n) {
     const p = document.createElement("p"); p.className = "hint";
-    p.textContent = `${unbucketed} session(s) fall before the first week the ` +
-      "engine emits a verdict for, and are not shown.";
-    $("#c-sess").after(p);
+    p.textContent = `${noDist.n} week-and-type rows record sessions but no ` +
+      "distance, so they add nothing to the km chart. A missing distance is " +
+      "absent, not zero - a bar's height is what was measured, not what was done.";
+    $("#c-km").after(p);
   }
-  barChart($("#c-km"), engineWeeks.map(wk => ({ week: wk, total: byWeek.get(wk).km,
-    parts: [{ name: "distance", v: byWeek.get(wk).km, color: "--series-1" }] })),
-    "--series-1", "km", v => fmt(v, 1));
-  barChart($("#c-sess"), engineWeeks.map(wk => ({ week: wk,
-    total: [...byWeek.get(wk).n.values()].reduce((a, b) => a + b, 0),
-    parts: types.map((t, i) => ({ name: t, v: byWeek.get(wk).n.get(t) || 0,
-                                  color: TYPE_COLORS[i % TYPE_COLORS.length] })) })),
-    "--series-1", "sessions", v => fmt(v, 0));
   // The legend is built from the record, not hard-coded, so it can never again
   // name a category the data does not contain or omit one it does.
   const leg = $("#sess-legend"); leg.replaceChildren();
@@ -1085,6 +1123,7 @@ function wireAsk(db) {
     "how are the goals going?",
     "what is my longest run?",
     "what is my best 10k?",
+    "how many km a week do I run?",
     "did I pass the hop test?",
     "what injuries do I have?",
     "how did I sleep?",
@@ -1115,6 +1154,7 @@ function wireAsk(db) {
     const p = document.createElement("p");
     p.className = "msg " + (a.kind === "answer" ? "note" : a.kind);
     p.innerHTML = a.text;
+    if (a.view && a.sql) renderView(db, p, a);
     if (a.sql) attachTrace(db, p, a.sql);
     // Newest first: the answer to what was just asked should not require
     // scrolling past everything asked before it.
@@ -1193,6 +1233,69 @@ function resolutionTable(db) {
 }
 
 /* The trace control, shared by the brief and the ask box. */
+/* Render an answer's optional `view`: a picture of the rows it already cited.
+ *
+ * The rule holds because a view names an INDEX into `a.sql` rather than a
+ * query of its own, so anything drawn was also cited and is also runnable
+ * through the trace button underneath. A chart that could issue its own SELECT
+ * would be a second, unciteable source of numbers on a page whose whole claim
+ * is that there is no such thing.
+ *
+ * Bar heights and the axis maximum are arithmetic, and deliberately the only
+ * arithmetic here: they are presentational geometry rather than a figure
+ * anyone reads off, and the dashboard's charts already established that line.
+ * A pie would cross it - its angles ARE percentages of a total this page would
+ * have to compute - which is why `kind` has no pie. */
+function renderView(db, p, a) {
+  const queries = Array.isArray(a.sql) ? a.sql : [a.sql];
+  const q = queries[a.view.sql || 0];
+  if (!q) return;
+  const rs = rows(db, q);
+  if (!rs.length) return;
+  const box = document.createElement("div");
+  box.className = "view";
+
+  if (a.view.kind === "table") {
+    box.appendChild(tableOf(rs));
+  } else if (a.view.kind === "bars") {
+    const { x, y, by, unit } = a.view;
+    const keys = [...new Set(rs.map(r => r[x]))].sort();
+    /* Series order follows the record, so the colour a category gets is
+     * stable across answers rather than depending on row order. */
+    const cats = by ? [...new Set(rs.map(r => r[by]))].sort() : [null];
+    const series = keys.map(k => {
+      /* A null is skipped, never coerced. `distance_km` is null where no
+       * session that week recorded one, and a zero-height bar would say the
+       * athlete did not move rather than that nothing measured how far. */
+      const here = rs.filter(r => r[x] === k && r[y] !== null);
+      return {
+        week: k,
+        total: here.reduce((s, r) => s + r[y], 0),
+        parts: cats.map((c, i) => ({
+          name: c === null ? y : c,
+          v: here.filter(r => by ? r[by] === c : true).reduce((s, r) => s + r[y], 0),
+          color: TYPE_COLORS[i % TYPE_COLORS.length],
+        })),
+      };
+    });
+    barChart(box, series, "--series-1", unit || "", v => fmt(v, 1));
+    if (by) {
+      const leg = document.createElement("div");
+      leg.className = "legend";
+      cats.forEach((c, i) => {
+        const s = document.createElement("span");
+        s.innerHTML = `<span class="sw" style="background:var(${
+          TYPE_COLORS[i % TYPE_COLORS.length]})"></span>${String(c)}`;
+        leg.append(s);
+      });
+      box.appendChild(leg);
+    }
+  } else {
+    return;
+  }
+  p.appendChild(box);
+}
+
 function attachTrace(db, p, sql) {
   // One query or several: an answer that draws on two tables cites two, and
   // showing only the first would leave half its numbers traceable to nothing.

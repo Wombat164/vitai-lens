@@ -36,6 +36,10 @@ The lens's inability to answer a question is a *finding*. It is the most useful 
 
 **Ordinal quantities are not rendered as cardinals.** Where the engine will vouch for the ordering and not the magnitude, the lens may not print a bare number with a unit and expect the reader to discount it. Readers do not discount.
 
+**A chart is a picture of rows that were cited, never a second source.** An answer may carry a `view`, and a view names an INDEX into the queries that answer already cited - not a query of its own. So everything drawn is also listed under "show the rows this came from", and there is no figure on screen whose origin the reader cannot reach in one click. A chart able to issue its own `SELECT` would be an uncitable source of numbers on a page whose entire claim is that no such thing exists.
+
+The one arithmetic a view is allowed is presentational geometry: a bar's height and an axis maximum. Nobody reads a number off those, and they are checkable against the axis printed beside them. **This is the line that rules pie charts out** - a slice's angle is a share of a total nobody printed, so the geometry itself is a computed percentage. A stacked bar answers the same question and keeps the axis. See `docs/visual-language.md`.
+
 ## The narrator, and the one exception
 
 The lens generates English (`narrator.js`). Prose is where a client is most tempted to compute, because a sentence can smuggle a judgment in a way a chart cannot, so the rule is stated narrowly rather than waived:

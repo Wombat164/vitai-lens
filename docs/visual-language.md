@@ -90,9 +90,25 @@ both for the same reason.
 **Subjective versus objective.** Real (G75), and the lens rendered no
 subjective data at all until it was raised. But prose already distinguishes "an
 RPE of 4" from "4 km", and a reader who does not know what RPE is will not be
-helped by a colour. Surfaced in words instead. Note the adjacent finding: the
-engine declares no scale for `rpe`, `mood` or `pain`, so rendering "4 out of
-10" would invent a denominator (vitai#246).
+helped by a colour. Surfaced in words instead.
+
+> The adjacent finding said the engine declared no scale for `rpe`, `mood` or
+> `pain`, so rendering "4 out of 10" would invent a denominator (vitai#246).
+> **That is fixed at contract 26**: `rpe_scale`, `mood_scale` and `pain_scale`
+> name a registry entry, and the value is validated against its range where one
+> is declared. Absent still means unstated, and a reader still may not invent a
+> denominator - but where the record declares one, the lens may now show it.
+> Not yet done here.
+
+**Pie charts.** Rejected on the rule rather than on taste. A pie encodes each
+slice as a proportion of a total, so its geometry *is* a percentage, and a
+percentage of values this page did not receive as a percentage is a number it
+computed. Bar heights and an axis maximum are also arithmetic and are allowed,
+which looks inconsistent until you ask what a reader takes off the screen: a
+bar's height is read against a labelled axis that is on the page, and a slice's
+angle is read as a share of a whole nobody printed. A stacked bar gives the
+same comparison and keeps the axis. If the engine ever emits a share, a pie of
+that share is fine, because then it is a column.
 
 **Intervals.** An interval is its own marking. `76.4 (75.9-76.9)` says more
 than any badge, and a badge meaning "there was an interval here" is strictly

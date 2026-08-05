@@ -93,6 +93,48 @@ def main() -> int:
                   page.locator("#record .msg").count() > 0)
             check("chart notes rendered",
                   page.locator("#n-c-weight .msg").count() > 0)
+
+            # The weekly charts read `session_weeks` rather than bucketing and
+            # summing here, so what they draw has to match what the engine
+            # emitted. Counting bars is the cheapest way to catch the rewire
+            # silently drawing a subset - an SVG existing proves only that
+            # something rendered.
+            import sqlite3
+            con = sqlite3.connect("demo/health.db")
+            weeks = con.execute(
+                "SELECT COUNT(DISTINCT week) FROM session_weeks").fetchone()[0]
+            kmcells = con.execute(
+                "SELECT COUNT(*) FROM session_weeks WHERE distance_km IS NOT NULL"
+            ).fetchone()[0]
+            con.close()
+            check("the sessions chart draws every engine week",
+                  page.locator("#c-sess svg g.bars, #c-sess svg path").count() > 0
+                  and weeks > 0, f"{weeks} weeks in session_weeks")
+            check("the km chart draws only the cells carrying a distance",
+                  page.locator("#c-km svg path").count() <= kmcells,
+                  f"{page.locator('#c-km svg path').count()} bars vs "
+                  f"{kmcells} non-null cells")
+            check("the absent-is-not-zero note is shown",
+                  "absent, not zero" in page.locator("#c-km + .hint").inner_text())
+
+            # An answer may carry a `view`, and a view is a picture of the rows
+            # the answer already cited. Driving the real ask box is the only
+            # way to know it renders: the unit tests exercise the answer
+            # object, and an answer object with a view field is not a chart.
+            page.fill("#ask-input", "how many km a week do i run")
+            page.press("#ask-input", "Enter")
+            page.wait_for_selector("#ask-out .view svg", timeout=4000)
+            check("an answer's chart view renders",
+                  page.locator("#ask-out .view svg").count() > 0)
+            check("the chart is drawn beside its own trace button",
+                  page.locator("#ask-out .msg .view").count() > 0
+                  and page.locator("#ask-out .msg button.trace").count() > 0)
+
+            page.fill("#ask-input", "how far did i run last week")
+            page.press("#ask-input", "Enter")
+            page.wait_for_selector("#ask-out .view table", timeout=4000)
+            check("a single-week answer renders a table, not a one-bar chart",
+                  page.locator("#ask-out .view table").count() > 0)
             browser.close()
     finally:
         srv.shutdown()
