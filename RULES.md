@@ -4,9 +4,15 @@ vitai-lens is the **conformance client** for [vitai](https://github.com/Wombat16
 
 It is not a stats product. It is the demonstration that vitai did the hard work, and that a client can be thin.
 
-## The rule
+## The rule, and who it binds
 
 **The lens may not compute.**
+
+**This is the lens's own rule and not the rule for clients generally**, which is worth stating first because the two get conflated - including by me, repeatedly. A client of this engine MAY derive objectively: a sum, a mean, a rate, a maximum, a unit conversion, a smoothing. Anything where the same rows give the same answer to anyone who runs it, shown as the client's own number rather than the engine's. That is settled in loadline's `docs/rules/determinism.md`, and the test is: **would two honest clients computing this from the same rows disagree?** If they cannot, it is objective and a client may do it.
+
+Two things stay upstream even so: a **judgement** ("overtrained", "good progress"), which falls out of no arithmetic; and anything **an athlete will read as what the RECORD says** - verdicts, attainment, safety - because if every client invents its own weekly attainment percentage they will all differ and none is the record's.
+
+So when this repo refuses a mean or a streak, it is not saying no client may have one. It is saying **this** client will not, for the reason below.
 
 Every number on screen comes from a table in `health.db`. No averages, no rates, no totals, no percentages, no re-bucketing, no classification. If a value is on screen, a `SELECT` returned it.
 

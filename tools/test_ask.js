@@ -183,8 +183,14 @@ for (const q of QUALIFIED) {
 
   ok("a streak question refuses", a("how many weeks in a row have I been on target for steps").kind === "refusal");
   ok("and it gives the streak reason, not the ambiguity one",
-     /nothing here can count one/.test(t("how many weeks in a row have I been on target for steps")),
+     /streak/.test(t("how many weeks in a row have I been on target for steps")) &&
+     !/read that 2 ways/.test(t("how many weeks in a row have I been on target for steps")),
      t("how many weeks in a row have I been on target for steps").slice(0, 80));
+  // The limit is THIS client's, not every client's. loadline may compute a
+  // streak; the lens declines so the engine's gap stays visible.
+  ok("the refusal attributes the limit to this client, not to arithmetic",
+     /this client will not/.test(t("whats my longest streak")),
+     t("whats my longest streak").slice(0, 80));
   ok("no substituted percentage appears in it",
      !/85|%/.test(t("how many weeks in a row have I been on target for steps")));
   ok("other streak phrasings refuse too",

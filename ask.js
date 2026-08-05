@@ -1012,7 +1012,10 @@ const Ask = (() => {
                 "and the engine declares no scale for it, so the numbers order " +
                 "but do not convert."
               : "Three rows, picked out. I will not average them: a mean is a " +
-                "number that appears in no row, and the engine emits none."),
+                "number that appears in no row, and the engine emits none. A " +
+                 "client MAY compute one and show it as its own; this one will " +
+                 "not, because a lens that computes hides what the engine " +
+                 "does not emit."),
       sql: [sql, loSql, hiSql, nSql],
     };
   });
@@ -1685,12 +1688,15 @@ const Ask = (() => {
         kind: "refusal",
         refusal: "comparison",
         text: periodic
-          ? "That asks for a comparison of two periods, and I cannot make one. " +
-            "Comparing two periods means computing a difference, and a " +
-            "difference is a number this page would have made up. The engine " +
-            "emits no period comparison; that is a gap in the engine, and the " +
-            "honest thing is to say so rather than subtract two figures and " +
-            "present the result as a finding."
+          ? "That asks for a comparison of two periods, and <b>this</b> client " +
+            "will not make one. A difference between two engine figures is " +
+            "objectively derivable - the same rows give the same answer to " +
+            "anyone - so a client MAY compute it, showing it as the client's " +
+            "own number rather than the engine's. This one does not, on " +
+            "purpose: it is the conformance client, and a lens that quietly " +
+            "computes what the engine does not emit hides the gap from " +
+            "everyone. The engine emits no period comparison, and that is the " +
+            "thing worth knowing."
           : "That asks for a comparison, and I cannot make one. Setting two " +
             "groups against each other means deciding what counts as the " +
             "difference between them, and that decision would be mine rather " +
@@ -1705,13 +1711,15 @@ const Ask = (() => {
       return {
         kind: "refusal",
         refusal: "streak",
-        text: "That asks for a streak, and nothing here can count one. " +
-              "Counting consecutive periods means walking the rows in order " +
-              "and stopping at the first break, which is a computation over " +
-              "the sequence rather than anything a single row holds. The " +
-              "engine emits no streak, so a number here would be one this page " +
-              "invented - and the nearest figure it has, the latest period on " +
-              "its own, is a different answer wearing the right shape.",
+        text: "That asks for a streak, and <b>this</b> client will not count " +
+              "one. Walking the rows in order and stopping at the first break " +
+              "is objectively derivable - the same rows give the same answer " +
+              "to anyone - so a client MAY do it and show it as its own " +
+              "number. This one does not, because it is the conformance " +
+              "client and a lens that computes what the engine does not emit " +
+              "hides the gap. The engine emits no streak, and the nearest " +
+              "figure it has - the latest period alone - is a different " +
+              "answer wearing the right shape.",
         sql: null,
         matched: null,
       };
