@@ -134,7 +134,7 @@ const Ask = (() => {
   // `most recent` and `latest` lead the alternation deliberately: they must
   // win over the bare `most`, or "my most recent run" reads as a request for
   // a maximum and refuses instead of selecting the newest row.
-  const SUPERLATIVE_RE = /\b(most recent|latest|newest|longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak|record)\b/;
+  const SUPERLATIVE_RE = /\b(most recent|latest|newest|longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak)\b/;
   const COMPARISON_RE = /\b(compare|compared|versus|vs|better than|worse than|more than|less than)\b/;
   const AGGREGATE_RE = /\b(total|totals|altogether|average|averages|mean|sum|per week|typical)\b/;
   const RELATIVE = ["last week", "this week", "past week", "last month",
@@ -403,8 +403,15 @@ const Ask = (() => {
       };
     });
 
-  intent("goals", (q, s) => has(q, "goal", "target", "on track", "progress",
-                                "doing", "aim") ? 5 : 0,
+  /* The literal word `goal` is DECISIVE and the rest are suggestive. "how did
+   * I do against my step goal" tied `goals` against `daily-metric`, because
+   * `step` is a metric word and `doing` is a weak goals word - and a tie is
+   * now a refusal, correctly, except that a human reading it has no doubt.
+   * Saying which keyword actually settles the question is better than
+   * loosening the tie rule to let a coin-flip through. */
+  intent("goals", (q, s) =>
+    has(q, "goal", "goals") ? 6
+      : has(q, "target", "on track", "progress", "doing", "aim") ? 5 : 0,
     (q, s, query) => {
       const g = matchGoal(q, query);
       if (g) {
@@ -454,8 +461,13 @@ const Ask = (() => {
       };
     });
 
+  /* The dataset noun is DECISIVE, the rest are suggestive - the same
+   * distinction the goals intent needed. "How many sessions have I logged"
+   * lost to `coverage`, which scores on the word `logged`, and answered about
+   * missing days instead of about sessions. */
   intent("sessions", (q, s) => (s.sessionType ? 4 : 0) +
-    (has(q, "session", "train", "workout", "often", "times") ? 3 : 0),
+    (has(q, "session", "sessions") ? 6
+      : has(q, "train", "workout", "often", "times") ? 3 : 0),
     (q, s, query) => {
       if (s.sessionType) {
         const t = s.sessionType.replace(/'/g, "''");
@@ -676,8 +688,13 @@ const Ask = (() => {
       };
     });
 
+  /* `record` is a NOUN here far more often than a coverage word - "my
+   * record", "in the record" - and it was also in SUPERLATIVE_RE, where it
+   * had no EXTREMES entry at all and so could only ever block a question,
+   * never route one. "Has anything in my record been corrected" was refused
+   * as a request for a superlative. Removed from both. */
   intent("coverage", (q, s) => has(q, "missing", "gap", "unlogged", "logged",
-                                   "record", "coverage", "blank") ? 4 : 0,
+                                   "coverage", "blank") ? 4 : 0,
     (q, s, query) => {
       const sql = "SELECT COUNT(*) AS logged, MIN(date) AS a, MAX(date) AS b, " +
                   "SUM(CASE WHEN coverage IS NULL THEN 1 ELSE 0 END) AS blank, " +
@@ -949,8 +966,14 @@ const Ask = (() => {
       };
     });
 
+  /* `overwrite`, `changed` and `edited` are how a sceptic asks this, and the
+   * sceptic is the reader this answer exists for. "Did the engine ever
+   * silently overwrite a value without telling me" went unrecognised while
+   * "has anything been corrected" answered - the same question, and the
+   * unrecognised phrasing is the one carrying the worry. */
   intent("corrections", (q) => has(q, "correct", "supersede", "retract",
-                                   "typo", "amend") ? 7 : 0,
+                                   "typo", "amend", "overwrite", "overwritten",
+                                   "rewrite", "rewritten", "altered") ? 7 : 0,
     (q, s, query) => {
       const gSql = "SELECT date, slug, title, change_kind, reason FROM goals " +
                    "WHERE change_kind = 'correction'";
@@ -1386,10 +1409,41 @@ const Ask = (() => {
       }
     }
     let best = null, bestScore = 0;
+    const scored = [];
     for (const it of INTENTS) {
       let sc = 0;
       try { sc = it.score(q, s, query) || 0; } catch { sc = 0; }
+      if (sc > 0) scored.push({ it, sc });
       if (sc > bestScore) { bestScore = sc; best = it; }
+    }
+    /* AN INDECISIVE MATCH IS NOT A MATCH.
+     *
+     * The winner was whichever intent happened to be registered first among
+     * those tied at the top, which is registration order deciding what a
+     * question means. Three testers hit the consequence and none of them
+     * reported a wrong number: they reported a well-formed, confident answer
+     * about something they had not asked, which is the one shape this page
+     * has no defence against.
+     *
+     * `matchGoal` already refuses a tie for the same reason. This is that
+     * rule applied one level up, to the choice of question rather than the
+     * choice of row - and it is this repo's own discipline pointed at the
+     * router. The page refuses to compute a figure it cannot ground; refusing
+     * to GUESS WHICH QUESTION was asked is the same sentence. */
+    const tied = scored.filter(x => x.sc === bestScore);
+    if (best && bestScore >= FLOOR && tied.length > 1) {
+      const names = tied.map(x => `<code>${esc(x.it.id)}</code>`);
+      return {
+        kind: "refusal",
+        refusal: "ambiguous",
+        text: `I can read that ${tied.length} ways - as ` + N.listify(names) +
+              ` - and nothing in the question chooses between them. Rather than ` +
+              `pick one and answer confidently about the wrong thing, I am ` +
+              `stopping here. Naming a metric, a session type or a goal will ` +
+              `settle it.`,
+        sql: null,
+        matched: null,
+      };
     }
     if (!best || bestScore < FLOOR) {
       return {

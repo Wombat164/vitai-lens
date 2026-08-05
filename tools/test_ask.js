@@ -164,6 +164,53 @@ for (const q of QUALIFIED) {
      /longest run in the record/i.test(said("what is my longest run")));
 }
 
+/* ---- Phase 1: the router refuses rather than guessing -------------------
+ * Registration order was deciding what a question meant whenever two intents
+ * tied. `matchGoal` already refused a tie for the same reason; this is that
+ * rule one level up, applied to the choice of QUESTION rather than of row. */
+{
+  const a = (q) => Ask.answer(q, query);
+
+  // A word that is decisive should beat one matched incidentally, or the tie
+  // rule turns every loose question into a refusal.
+  ok("the literal word 'goal' settles a goals question",
+     a("how did I do against my step goal").matched === "goals");
+  ok("the dataset noun settles a sessions question",
+     a("how many sessions have I logged").matched === "sessions",
+     `matched ${a("how many sessions have I logged").matched}`);
+  ok("CONTROL: coverage still owns its own question",
+     a("which days are missing").matched === "coverage");
+
+  // `record` is a noun here far more often than a superlative, and it had no
+  // EXTREMES entry at all - so it could only ever block a question.
+  ok("'my record' is not a request for a personal best",
+     a("has anything in my record been corrected").matched === "corrections",
+     `matched ${a("has anything in my record been corrected").matched}`);
+  ok("CONTROL: a real superlative still routes",
+     a("what is my longest run").matched === "extremum");
+  ok("CONTROL: a best effort still routes",
+     a("what is my best 10k").matched === "best-effort");
+
+  // The tie rule itself. Without this the rule is inert: every other
+  // assertion here passes with it disabled, because the decisiveness fixes
+  // resolve those cases before a tie can happen. "How am I doing on steps"
+  // genuinely reads two ways - the steps GOAL at 85%, or the steps METRIC -
+  // and nothing in the question chooses.
+  {
+    const amb = a("how am I doing on steps");
+    ok("a genuine tie refuses instead of picking",
+       amb.kind === "refusal", `got ${amb.kind} via ${amb.matched}`);
+    ok("and it names both readings",
+       /goals/.test(strip(amb.text)) && /daily-metric/.test(strip(amb.text)),
+       strip(amb.text).slice(0, 90));
+  }
+
+  // The sceptic's phrasing of the correction question.
+  ok("'silently overwrite' reaches the corrections answer",
+     a("did the engine ever silently overwrite a value without telling me")
+       .matched === "corrections");
+}
+
 /* ---- conflicts honours the metric it was asked about --------------------
  * Two questions naming different metrics returned byte-identical output,
  * listing fields that included neither. Quietly widening a question to the
