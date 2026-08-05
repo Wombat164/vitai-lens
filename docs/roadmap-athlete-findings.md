@@ -47,8 +47,8 @@ Every phase below is that sentence, applied somewhere.
 3.2, and Phase 3.3 - which turned out to be a false positive hiding a real
 bug, recorded in its own section.
 
-**Open**: Phase 1, Phase 3.1, 3.4 and 3.5, all of Phase 4, and the engine
-track.
+**Open**: Phase 1, Phase 2.5 (the `versus` half) and 2.6, Phase 3.1, 3.4,
+3.5, 3.6 and 3.7, and all of Phase 4. **The engine track is filed.**
 
 ### The three routing fixes
 
@@ -200,50 +200,57 @@ which turns a refusal into the report a client author actually needs.
 diff them. That tests the engine's central promise - a build is a function of
 the record - from outside, which is the one thing vitai's own suite cannot do.
 
-## The engine track
+## The engine track: FILED 2026-08-05
 
-These are not lens work. They go to vitai as issues, and the lens's inability
-to answer them is the evidence.
+Every item was checked against the built read model before filing, and that
+check moved four of them. Consolidated into three new issues and two comments
+rather than thirteen, because several were one question:
 
-**Figures the engine would have to emit** (from athlete 3, who wanted a
-scoreboard and hit the compute rule at every turn):
+| filed | covers |
+|---|---|
+| [vitai#273](https://github.com/Wombat164/vitai/issues/273) | a level goal is not an accumulation goal. "Down to 78 kg" scores as a floor, counts nothing, reports no progress |
+| [vitai#274](https://github.com/Wombat164/vitai/issues/274) | the demo cannot exhibit two shipped contracts: every goal is `floor`, no week is empty |
+| [vitai#275](https://github.com/Wombat164/vitai/issues/275) | a gate restricts one word, so "may I walk" and "may I run" get the same answer |
+| comment on [#209](https://github.com/Wombat164/vitai/issues/209) | the scoreboard cluster: deltas, windowed totals, averages, streaks. That issue already owns the question |
+| comment on [#262](https://github.com/Wombat164/vitai/issues/262) | forward projection. Already its subject |
 
-1. A period-over-period delta per metric (this week versus last).
-2. A window total: distance or sessions over a stated range.
-3. An average per metric where one is meaningful.
-4. A forward projection, with the model and basis that produced it.
-5. **A windowed TOTAL** - distance or duration summed over a stated range.
-   *Not* windowed counting, which is ours; see Phase 2.6 and the correction
-   note below it.
-6. A streak: consecutive periods on target, per goal.
-7. An attainment figure for a decreasing-target goal. A weight goal framed as
-   "down to X" gets no percentage while increasing-target goals get one.
-8. Gate status as an addressable row per activity, so "am I cleared to run" is
-   answerable without re-deriving it from the check history.
+### What the check changed
 
-**Gaps the other two found:**
+**Two items were OURS, not the engine's.** Both were filed by the athletes as
+engine gaps with the honest caveat that they could not tell from outside. The
+read model settles it:
 
-9. **Gate granularity.** "is walking gated", "does it cover cycling" and "am I
-   allowed to run" all return the same paragraph, because the gate names
-   `impact` and nothing finer. The practical question - what may I do today -
-   is unanswerable.
-10. **Nutrition is unreachable.** `protein_g` and `kcal_in` appear in the
-    conflicts log and no question surfaces them.
-11. **Provenance for a medical entry.** Who recorded the achilles entry cannot
-    be asked.
+- **Nutrition is reachable.** `daily` carries `kcal_in`, `protein_g`, `fat_g`,
+  `carb_g`, `fibre_g`, `sugar_g` and `sodium_mg`, and `meals` has rows. The
+  engine surfaces nutrition; **this client has no intent for it.** Added as
+  Phase 3.6 below.
+- **Medical entries carry provenance.** `medical` has `source`,
+  `provider_type`, `device` and `recorded_at`, so "who recorded the achilles
+  entry" is answerable and nothing asks it. Added as Phase 3.7 below.
 
-**Two demo-fixture gaps** found while measuring, and both are #204's corollary
-- a fixture holding one value of a vocabulary proves nothing about the
-distinction:
+**One was a duplicate**: forward projection is #262's whole subject.
 
-12. **Every goal in the demo is `polarity: floor`.** No ceiling, band or
-    approach; zero rows carry `room_left`, `breach: over` or `target_hi`. So
-    contract 24's entire motivating case - a calorie cap scoring 641% - cannot
-    be demonstrated by the reference client. Contrast contract 26, which does
-    it right: `rpe_scale` and `pain_scale` each appear both declared and null.
-13. **`session_weeks` has no empty week in the demo**, because the demo trains
-    every week. The behaviour is pinned by tests upstream, but a consumer
-    reading the demo alone would not learn the distinction exists.
+**One was mis-classified by me** and is corrected in 2.6 above: counting inside
+a date window is a `WHERE` clause and belongs here, not upstream.
+
+### Confirmed absent, and worth knowing together
+
+`streaks`, `baselines`, `features`, `forecasts`, `energy_audit` and
+`source_reliability` are all listed in `docs/model.md` under artifact kind 2
+and none exists in the read model. They are designed and unbuilt. #209's
+"figures every consumer wants that no table offers" is a longer list than the
+four tiles it was raised for.
+
+## Phase 3.6: nutrition has no intent
+
+*Repro: "how much protein did I eat on 2030-06-16" returns the day summary
+with no nutrition figure; "protein" alone is unrecognised.* The columns are
+there. This is a missing question, not a missing table.
+
+## Phase 3.7: medical provenance has no intent
+
+*Repro: "who recorded this, was it a doctor" returns coverage statistics.*
+`medical.source` and `medical.provider_type` answer it.
 
 ## Sequencing
 
