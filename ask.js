@@ -131,7 +131,10 @@ const Ask = (() => {
                   "december"];
 
   const MONTH_RE = /\b(january|february|march|april|june|july|august|september|october|november|december)\b/;
-  const SUPERLATIVE_RE = /\b(longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak|record)\b/;
+  // `most recent` and `latest` lead the alternation deliberately: they must
+  // win over the bare `most`, or "my most recent run" reads as a request for
+  // a maximum and refuses instead of selecting the newest row.
+  const SUPERLATIVE_RE = /\b(most recent|latest|newest|longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak|record)\b/;
   const COMPARISON_RE = /\b(compare|compared|versus|vs|better than|worse than|more than|less than)\b/;
   const AGGREGATE_RE = /\b(total|totals|altogether|average|averages|mean|sum|per week|typical)\b/;
   const RELATIVE = ["last week", "this week", "past week", "last month",
@@ -163,6 +166,23 @@ const Ask = (() => {
     out.comparison = COMPARISON_RE.test(q);
     const agg = q.match(AGGREGATE_RE);
     if (agg) out.aggregate = agg[1];
+    /* Two words in AGGREGATE_RE carry a second, commoner meaning, and both
+     * produced a confident arithmetic refusal for a question containing no
+     * arithmetic. Testers hit each of them within minutes.
+     *
+     * `mean` is a VERB far more often than a noun here. "doesn't that mean
+     * I'm healed" and "no I mean the weight measurements" were both refused
+     * with "your question asks for mean". As a noun it takes an article or an
+     * `of`; as a verb it does not.
+     *
+     * `total` next to "how many" is an ADJECTIVE on a count, and counting
+     * rows is explicitly permitted. "how many total sessions have I logged"
+     * refused while "how many sessions" did not, which is the classifier
+     * keying on a word rather than on the shape of the request. */
+    if (out.aggregate === "mean" && !/\b(the|a)\s+mean\b|\bmean\s+of\b/.test(q))
+      out.aggregate = null;
+    if (/^(total|totals)$/.test(out.aggregate || "") && /\bhow many\b/.test(q))
+      out.aggregate = null;
     return out;
   }
 
@@ -473,7 +493,8 @@ const Ask = (() => {
     (q, s, query) => {
       const d = s.date.replace(/'/g, "''");
       const sql = `SELECT date, steps, sleep_h, rhr, kcal_in, kcal_out, ` +
-                  `active_min, mood, feel, pain, coverage, modelled, note ` +
+                  `active_min, mood, mood_scale, pain, pain_scale, feel, ` +
+                  `coverage, modelled, note ` +
                   `FROM daily WHERE date = '${d}'`;
       const sesSql = `SELECT type, distance_km, duration_s, avg_hr, rpe, ` +
                      `modelled FROM sessions WHERE date = '${d}'`;
@@ -528,28 +549,48 @@ const Ask = (() => {
         // own: prose already distinguishes "an RPE of 4" from "4 km", and a
         // reader who does not know what RPE is will not be helped by a colour.
         const eff = x.rpe === null || x.rpe === undefined ? ""
-          : `, effort ${N.rec(x.rpe)} by his own judgment`;
+          : `, effort ${N.rec(x.rpe)} by your own judgment`;
         return `a <code>${esc(x.type)}</code>${km}${eff}`;
       });
       // What the athlete said about the day, as against what was measured of
       // it. G75: subjective and objective are different quantities, and the
       // lens has been rendering none of the first kind at all.
-      const said = [];
+      /* A DECLARED SCALE IS NAMED, and the blanket disclaimer is gone.
+       *
+       * This said "for which it declares no scale" unconditionally, and it
+       * had stopped being true: contract 26 added `mood_scale` and
+       * `pain_scale`, and this demo carries `nrs-0-10` on the very rows the
+       * sentence was denying. A stale claim ABOUT the record is worse than a
+       * missing one, because a reader has no way to tell it from a live fact.
+       *
+       * Where a scale is declared it is named. Where it is not, that is said
+       * per value rather than as a blanket, because absent means unstated and
+       * a reader must not invent a denominator either way. */
+      const said = [], scaled = [], bare = [];
       if (day) {
-        if (day.mood !== null && day.mood !== undefined)
-          said.push(`mood ${N.rec(day.mood)}`);
+        const subj = (label, value, scale) => {
+          if (value === null || value === undefined) return;
+          if (scale) { said.push(`${label} ${N.rec(value)}`); scaled.push(`${label} on <code>${esc(scale)}</code>`); }
+          else { said.push(`${label} ${N.rec(value)}`); bare.push(label); }
+        };
+        subj("mood", day.mood, day.mood_scale);
         if (day.feel) said.push(`the day felt <em>${esc(day.feel)}</em>`);
-        if (day.pain !== null && day.pain !== undefined)
-          said.push(`pain ${N.rec(day.pain)}`);
+        subj("pain", day.pain, day.pain_scale);
       }
       return {
         text: `On ${esc(s.date)}: ` +
               (bits.length ? N.listify(bits) : "no daily figures") +
               (sessions.length ? `. Sessions: ${N.listify(sessions)}.` : ".") +
               (said.length
-                ? ` He reported ${N.listify(said)} - his own account of the ` +
+                ? ` You reported ${N.listify(said)} - your own account of the ` +
                   `day, which the engine keeps as a different quantity from ` +
-                  `anything measured of him, and for which it declares no scale.`
+                  `anything measured of you.` +
+                  (scaled.length ? ` It declares a scale for ${N.listify(scaled)}.` : ``) +
+                  (bare.length
+                    ? ` It declares none for ${N.listify(bare)}, so read ` +
+                      `${bare.length > 1 ? "those" : "that"} as a bare number: ` +
+                      `nothing here says what it is out of.`
+                    : ``)
                 : ``) +
               (day && day.coverage
                 ? ` The day is marked <code>${esc(day.coverage)}</code>.`
@@ -674,6 +715,15 @@ const Ask = (() => {
     largest:  { t: "sessions", col: "distance_km", dir: "DESC", unit: "km", word: "largest" },
     hardest:  { t: "sessions", col: "rpe", dir: "DESC", unit: null, word: "hardest by recorded effort" },
     easiest:  { t: "sessions", col: "rpe", dir: "ASC",  unit: null, word: "easiest by recorded effort" },
+    /* SELECTING THE LATEST IS THE SAME OPERATION AS SELECTING THE LARGEST.
+     * "what is my longest run" answered and "what is my most recent run"
+     * refused as a superlative, which is the difference between a row picked
+     * by magnitude and a row picked by date - no difference at all under the
+     * rule. "What did I just do" is the most basic query a record reader owes
+     * its reader, and it was the one it could not answer. */
+    "most recent": { t: "sessions", col: "date", dir: "DESC", unit: null, word: "most recent" },
+    latest:   { t: "sessions", col: "date", dir: "DESC", unit: null, word: "latest" },
+    newest:   { t: "sessions", col: "date", dir: "DESC", unit: null, word: "newest" },
     heaviest: { t: "weight", col: "kg", dir: "DESC", unit: "kg", word: "heaviest" },
     lightest: { t: "weight", col: "kg", dir: "ASC",  unit: "kg", word: "lightest" },
   };
@@ -697,15 +747,26 @@ const Ask = (() => {
                      "<code>" + esc(e.col) + "</code>, so there is nothing to " +
                      "pick from.", sql };
     }
-    const val = N.rec(r[e.col], e.unit, e.col === "distance_km" ? 2 : 1);
+    /* Ordering by DATE has no magnitude to print. Formatting the ordering
+     * column as a quantity gave "at NaN" for the newest row, because the
+     * column was a date - the row is the answer, and there is no figure. A
+     * session says how far it went instead, which is the fact the reader
+     * wanted from "what did I just do". */
+    const byDate = e.col === "date";
+    const val = byDate ? null : N.rec(r[e.col], e.unit, e.col === "distance_km" ? 2 : 1);
     const what = e.t === "sessions"
       ? "a <code>" + esc(r.type) + "</code> on " + esc(r.date)
       : "a weigh-in on " + esc(r.date);
+    const tail = byDate
+      ? (r.distance_km !== null && r.distance_km !== undefined
+          ? ", " + N.rec(r.distance_km, "km", 2) + "."
+          : ", which recorded no distance.")
+      : ", at " + val + ".";
     return {
       text: "The " + esc(e.word) + (s.sessionType ? " " + esc(s.sessionType) : "") +
-            " in the record is " + what + ", at " + val + "." +
+            " in the record is " + what + tail +
             (r.rpe !== null && r.rpe !== undefined && e.col !== "rpe"
-              ? " Effort " + N.rec(r.rpe) + " by his own judgment." : "") +
+              ? " Effort " + N.rec(r.rpe) + " by your own judgment." : "") +
             (r.note ? " The note reads <q>" + esc(r.note) + "</q>" : "") +
             " This is a row picked out, not a figure computed. Selecting the " +
             "largest is the same operation as selecting the latest, which is " +
@@ -760,7 +821,7 @@ const Ask = (() => {
             "; the lowest " + f(lo) + " on " + esc(lo.date) +
             " and the highest " + f(hi) + " on " + esc(hi.date) + ". " +
             (subjective
-              ? "That is his own account rather than anything measured of him, " +
+              ? "That is your own account rather than anything measured of you, " +
                 "and the engine declares no scale for it, so the numbers order " +
                 "but do not convert."
               : "Three rows, picked out. I will not average them: a mean is a " +
@@ -1232,7 +1293,13 @@ const Ask = (() => {
       // which reads as a reliability verdict. `reliable` is a scoring keyword
       // for that intent and was missing here, so the veto leaked on the most
       // natural phrasing a sceptic uses.
-      test: (q) => has(q, "reliable", "unreliable", "accurate", "inaccurate",
+      // `right` means CORRECT here, and "right now" means at this moment. The
+      // veto could not tell them apart, so "am I restricted from anything
+      // right now" was refused as asking for a judgment while the same
+      // question without those two words answered correctly - and the help
+      // text lists it as supported. Strip the temporal sense before testing.
+      test: (q) => has(q.replace(/\bright\s+(now|away|there|then)\b/g, " "),
+                       "reliable", "unreliable", "accurate", "inaccurate",
                        "trustworthy", "good", "bad", "better", "worse",
                        "should", "ought",
                        "advice", "advise", "recommend", "suggest", "optimal",

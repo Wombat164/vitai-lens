@@ -118,6 +118,65 @@ for (const q of QUALIFIED) {
      a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 70)}` : "");
 }
 
+/* ---- keyword misfires, and the controls that prove the rule survived ----
+ * Each pair is a word with two meanings. The first assertion is that the
+ * common meaning no longer trips a rule written for the other; the second is
+ * that the rule still fires when the word means what the rule is about.
+ * Without the control, every one of these "fixes" could be a loosening. */
+{
+  const kind = (q) => Ask.answer(q, query).kind;
+  const said = (q) => strip(Ask.answer(q, query).text || "");
+
+  // `mean` as a verb. Refused as a request for an average.
+  ok("'doesnt that mean' is not a request for an average",
+     kind("pain is 0 now, doesnt that mean im healed") !== "refusal");
+  ok("'no I mean' is not a request for an average",
+     kind("no I mean specifically the weight measurements") !== "refusal");
+  ok("CONTROL: a real mean is still refused",
+     kind("whats the mean of my weight") === "refusal");
+  ok("CONTROL: an average is still refused",
+     kind("whats my average weight") === "refusal");
+
+  // `total` as an adjective on a count. Counting rows is permitted.
+  ok("'how many total' is a count, not arithmetic",
+     kind("how many total sessions have I logged") !== "refusal");
+  ok("CONTROL: a bare total is still refused",
+     kind("what is my total distance") === "refusal");
+
+  // `right now` is a time, not a value judgement.
+  ok("'right now' does not trip the judgment veto",
+     kind("am I restricted from anything right now") === "answer");
+  ok("CONTROL: a judgment is still refused",
+     kind("is this plan any good") === "refusal");
+  ok("CONTROL: advice is still refused",
+     kind("should I take creatine") === "refusal");
+
+  // Selecting the newest row is the same operation as selecting the largest.
+  ok("'most recent run' selects a row rather than refusing",
+     /most recent run in the record is/i.test(said("whats my most recent run")),
+     said("whats my most recent run").slice(0, 70));
+  ok("'latest run' selects the same row",
+     /2030-06-30/.test(said("whats my latest run")));
+  ok("a date-ordered pick prints no NaN",
+     !/nan/i.test(said("whats my most recent run")),
+     said("whats my most recent run").slice(0, 70));
+  ok("CONTROL: the largest is still selected by magnitude",
+     /longest run in the record/i.test(said("what is my longest run")));
+}
+
+/* ---- on-date: a stale claim about the record is worse than a missing one -
+ * This said "for which it declares no scale" unconditionally, and contract 26
+ * had made it false: the demo carries `nrs-0-10` on the very rows it denied. */
+{
+  const t = strip(Ask.answer("what happened on 2030-06-30", query).text || "");
+  ok("on-date does not deny a scale the record declares",
+     !/declares no scale/i.test(t), t.slice(0, 100));
+  ok("on-date names the declared scale",
+     /nrs-0-10/.test(t), t.slice(0, 100));
+  ok("on-date addresses the reader rather than a third party",
+     !/\bhe reported\b|\bhis own\b/i.test(t), t.slice(0, 100));
+}
+
 /* ---- routing: the wrong row is worse than no row ------------------------
  * Three testers independently led with the same failure, and none of them
  * reported a wrong NUMBER. They reported a well-formed sentence about a
