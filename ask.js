@@ -78,10 +78,15 @@ const Ask = (() => {
   const SESSION_WORDS = {
     run: "run", runs: "run", running: "run", ran: "run", jog: "run",
     walk: "walk", walks: "walk", walking: "walk", walked: "walk",
-    ride: "cycle", cycling: "cycle", bike: "cycle", cycle: "cycle",
-    swim: "swim", swimming: "swim", swam: "swim",
-    strength: "strength", gym: "strength", lift: "strength", lifting: "strength",
-    row: "row", rowing: "row", erg: "row",
+    // Plurals, because "how many swims in June" is how the question gets
+    // asked and `run` had them while the others did not - so the same
+    // sentence answered for running and went unrecognised for swimming.
+    ride: "cycle", rides: "cycle", cycling: "cycle", bike: "cycle",
+    bikes: "cycle", cycle: "cycle", cycles: "cycle",
+    swim: "swim", swims: "swim", swimming: "swim", swam: "swim",
+    strength: "strength", gym: "strength", gyms: "strength",
+    lift: "strength", lifts: "strength", lifting: "strength",
+    row: "row", rows: "row", rowing: "row", erg: "row", ergs: "row",
   };
 
   const STOP = new Set(("a an the my me i is are was were do does did of on in "
@@ -248,6 +253,38 @@ const Ask = (() => {
    * page that silently used the reader's clock would answer "nothing in the
    * last week" about a record that is four years old, which is true and
    * useless. The horizon is stated in the answers that depend on it. */
+  /* Resolve a named window to a date range, or null if this cannot.
+   *
+   * COUNTING INSIDE A WINDOW IS OURS. `RULES.md`: "counting is a property of
+   * the query, so COUNT(*) is allowed", and a date range is a WHERE clause -
+   * both selection. The guard refused every window alike because nothing
+   * could scope when it was written, so "how many runs did I do in June"
+   * refused a question the database answers with 12.
+   *
+   * TOTALLING inside a window is NOT ours and stays refused: `WHERE` + `SUM`
+   * is a figure the engine has to stand behind. The two look identical until
+   * you ask what is being done to the window.
+   *
+   * The YEAR comes from the record, never from the reader's clock. "June" in
+   * a record that ends in 2030 means June 2030; resolving it against today
+   * would scope to a year the record does not cover and answer zero. */
+  function windowRange(win, query) {
+    if (!win) return null;
+    const last = horizon(query);
+    if (!last) return null;
+    const year = last.slice(0, 4);
+    const mi = MONTHS.indexOf(String(win).toLowerCase());
+    if (mi >= 0) {
+      const mm = String(mi + 1).padStart(2, "0");
+      const endDay = new Date(Date.UTC(+year, mi + 1, 0)).getUTCDate();
+      return { from: `${year}-${mm}-01`, to: `${year}-${mm}-${endDay}`,
+               label: `${win} ${year}` };
+    }
+    if (win === "this year") return { from: `${year}-01-01`, to: `${year}-12-31`,
+                                      label: year };
+    return null;                       // not a window this can honour
+  }
+
   function horizon(query) {
     const r = query("SELECT MAX(date) AS last FROM daily");
     return r.length ? r[0].last : null;
@@ -469,12 +506,34 @@ const Ask = (() => {
     (has(q, "session", "sessions") ? 6
       : has(q, "train", "workout", "often", "times") ? 3 : 0),
     (q, s, query) => {
+      /* This declares `window`, so it must refuse the windows it cannot
+       * honour rather than silently widening to the whole record. A month and
+       * a year resolve to a range; "lately" and "so far" do not. */
+      const qual = qualifiers(q);
+      const win = windowRange(qual.window, query);
+      if (qual.window && !win) {
+        return {
+          text: `I can scope a count to a month or a year, and <em>` +
+                `${esc(qual.window)}</em> is neither - so rather than quietly ` +
+                `count the whole record and let it read as that period, I am ` +
+                `stopping here.`,
+          sql: null,
+        };
+      }
+      const range = win
+        ? ` AND date >= '${win.from}' AND date <= '${win.to}'`
+        : "";
+      const inWin = win ? ` in ${esc(win.label)}` : "";
       if (s.sessionType) {
         const t = s.sessionType.replace(/'/g, "''");
         const sql = `SELECT type, COUNT(*) AS n, MIN(date) AS first, ` +
-                    `MAX(date) AS last FROM sessions WHERE type = '${t}' ` +
-                    `GROUP BY type`;
+                    `MAX(date) AS last FROM sessions WHERE type = '${t}'` +
+                    range + ` GROUP BY type`;
         const r = query(sql)[0];
+        if (!r && win) {
+          return { text: `No <code>${esc(s.sessionType)}</code> session is ` +
+                         `recorded${inWin}.`, sql };
+        }
         if (!r) {
           return { text: `The record holds no <code>${esc(s.sessionType)}</code> ` +
                          `sessions at all. That is an absence in the record, ` +
@@ -482,7 +541,7 @@ const Ask = (() => {
         }
         return {
           text: `${N.derCount(r.n)} <code>${esc(r.type)}</code> ` +
-                `${N.plural(r.n, "session")}, from ${esc(r.first)} to ` +
+                `${N.plural(r.n, "session")}${inWin}, from ${esc(r.first)} to ` +
                 `${esc(r.last)}. I can count them because counting rows is a ` +
                 `property of the query; I will not total the distance, because ` +
                 `that would be a quantity computed here rather than one the ` +
@@ -490,16 +549,20 @@ const Ask = (() => {
           sql,
         };
       }
-      const sql = "SELECT type, COUNT(*) AS n FROM sessions GROUP BY type " +
-                  "ORDER BY n DESC";
+      const sql = "SELECT type, COUNT(*) AS n FROM sessions" +
+                  (range ? " WHERE 1=1" + range : "") +
+                  " GROUP BY type ORDER BY n DESC";
       const rs = query(sql);
+      if (!rs.length) {
+        return { text: `The record holds no sessions${inWin}.`, sql };
+      }
       return {
         text: `The record holds ` +
               N.listify(rs.map(r => `${N.der(r.n)} <code>${esc(r.type)}</code>`)) +
-              `, by the engine's own session types.`,
+              `${inWin}, by the engine's own session types.`,
         sql,
       };
-    });
+    }, { window: true });
 
   intent("on-date", (q, s) => s.date ? 8 : 0,
     (q, s, query) => {

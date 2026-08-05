@@ -106,8 +106,15 @@ for (const q of NONSENSE) {
  * The guard it was testing is still tested, twice over: "in june" is a window
  * no table here has, and "last week" on STEPS is a week window on a metric
  * sessions do not carry. Both still refuse. */
+/* "how many runs did i do in june" was here too, and moved for the same
+ * reason the walk question did: it asserted a limitation rather than a rule.
+ * Counting inside a window is `WHERE` + `COUNT`, both of which RULES.md
+ * permits, so refusing it was withholding an answer the database gives.
+ *
+ * The window guard is still tested by "last week" on STEPS - a daily metric,
+ * whose answer cannot scope - and the comparison and average guards by the
+ * two entries below them. */
 const QUALIFIED = [
-  "how many runs did i do in june",
   "what is my average weekly mileage",
   "how does june compare to may",
   "how many steps did i do last week",
@@ -162,6 +169,32 @@ for (const q of QUALIFIED) {
      said("whats my most recent run").slice(0, 70));
   ok("CONTROL: the largest is still selected by magnitude",
      /longest run in the record/i.test(said("what is my longest run")));
+}
+
+/* ---- counting inside a window is ours; totalling is not -----------------
+ * The line these pin: `WHERE` + `COUNT` is selection and belongs here;
+ * `WHERE` + `SUM` is a figure the engine has to stand behind. They look
+ * identical until you ask what is being done to the window. */
+{
+  const t = (q) => strip(Ask.answer(q, query).text || "");
+  const k = (q) => Ask.answer(q, query).kind;
+
+  ok("a month scopes a count", /12 run sessions in june 2030/i.test(t("how many runs did i do in june")),
+     t("how many runs did i do in june").slice(0, 70));
+  ok("the year comes from the record, not the clock",
+     /2030/.test(t("how many runs did i do in june")));
+  ok("a month with no sessions of that type says so, scoped",
+     /no swim session is recorded in june 2030/i.test(t("how many swims in june")),
+     t("how many swims in june").slice(0, 70));
+  ok("a window it cannot resolve is refused by name, not widened",
+     /month or a year/.test(t("how many runs did i do lately")),
+     t("how many runs did i do lately").slice(0, 70));
+  ok("CONTROL: unscoped still counts the whole record",
+     /28 run sessions/.test(t("how many runs did i do")));
+  ok("CONTROL: a windowed TOTAL is still refused",
+     k("what is my total distance in june") === "refusal");
+  ok("plurals of every session type are recognised",
+     !/did not understand/i.test(t("how many rides did I do")));
 }
 
 /* ---- Phase 1: the router refuses rather than guessing -------------------
