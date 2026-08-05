@@ -171,6 +171,39 @@ for (const q of QUALIFIED) {
      /longest run in the record/i.test(said("what is my longest run")));
 }
 
+/* ---- the weight answer is not a fixed template --------------------------
+ * Every weight question returned the same sentence about the latest reading,
+ * including "how many weigh-ins came from the scale". A tester asked five
+ * ways and got one reply - an answer wearing the clothes of a different one. */
+{
+  const t = (q) => strip(Ask.answer(q, query).text || "");
+
+  ok("a scoped count is scoped",
+     /26 from scale/.test(t("how many weigh ins came from the scale")),
+     t("how many weigh ins came from the scale").slice(0, 70));
+  ok("unknown origin counts the nulls, not the total",
+     /32 of 60/.test(t("how many weigh-ins have unknown origin")),
+     t("how many weigh-ins have unknown origin").slice(0, 70));
+  ok("an unscoped count breaks down by the record's own origins",
+     /60 weigh-ins, by origin/.test(t("how many weigh ins are there")),
+     t("how many weigh ins are there").slice(0, 70));
+  ok("CONTROL: the default is still the latest reading",
+     /last weigh-in is/.test(t("what do they weigh")));
+  ok("CONTROL: it still refuses to say up or down",
+     /not going to tell you whether that is up or down/.test(t("what do they weigh")));
+
+  // `norm` keeps hyphens for slugs and dates, so "weigh-ins" did not match
+  // the metric word `weigh` while "weigh ins" did - the same question routing
+  // two ways on a hyphen, and the hyphenated spelling is the commoner one.
+  ok("a hyphenated word fills the same slot as the spaced one",
+     t("how many weigh-ins have unknown origin") ===
+     t("how many weigh ins have unknown origin"));
+  ok("CONTROL: a hyphenated SLUG still resolves",
+     /hop-test/.test(t("did I pass the hop-test")));
+  ok("CONTROL: a date still resolves",
+     /2030-06-16/.test(t("what happened on 2030-06-16")));
+}
+
 /* ---- counting inside a window is ours; totalling is not -----------------
  * The line these pin: `WHERE` + `COUNT` is selection and belongs here;
  * `WHERE` + `SUM` is a figure the engine has to stand behind. They look

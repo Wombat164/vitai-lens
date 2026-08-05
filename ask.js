@@ -102,7 +102,22 @@ const Ask = (() => {
     const words = norm(q).split(" ").filter(w => w && !STOP.has(w));
     const out = { words, metric: null, sessionType: null, date: null,
                   goal: null, wantsList: false };
+    /* A HYPHENATED WORD IS ALSO ITS PARTS, for slot filling only.
+     *
+     * `norm` keeps hyphens on purpose - dates and slugs like `hop-test` and
+     * `borg-cr10` need them - and the cost was that "weigh-ins" did not match
+     * the metric word `weigh` while "weigh ins" did. The same question routed
+     * two different ways depending on a hyphen, and the hyphenated spelling
+     * is the commoner one.
+     *
+     * Split for the LOOKUP and never for the token, so slugs and dates are
+     * untouched. */
+    const forSlots = [];
     for (const w of words) {
+      forSlots.push(w);
+      if (w.includes("-")) forSlots.push(...w.split("-").filter(Boolean));
+    }
+    for (const w of forSlots) {
       if (!out.metric && METRIC_WORDS[w]) out.metric = METRIC_WORDS[w];
       if (!out.sessionType && SESSION_WORDS[w]) out.sessionType = SESSION_WORDS[w];
     }
@@ -420,6 +435,59 @@ const Ask = (() => {
   intent("weight", (q, s) => (s.metric === "kg" ? 5 : 0) +
     (has(q, "weigh", "weight", "heavy", "kg") ? 2 : 0),
     (q, s, query) => {
+      /* THIS WAS A FIXED TEMPLATE. Every weight question returned the same
+       * sentence about the latest reading - "how many weigh-ins came from the
+       * scale" included - which is an answer wearing the clothes of a
+       * different one. A tester asked five ways and got one reply.
+       *
+       * Counting rows and filtering by a stored column are both selection, so
+       * the count branch below needs nothing from the engine. The origin
+       * vocabulary comes from the RECORD rather than a list here, so a record
+       * with different sources is askable about its own. */
+      if (/\bhow many\b/.test(q)) {
+        const total = query("SELECT COUNT(*) AS n FROM weight")[0];
+        const byOrigin = query(
+          "SELECT origin, COUNT(*) AS n FROM weight GROUP BY origin ORDER BY n DESC");
+        const cite = ["SELECT COUNT(*) AS n FROM weight",
+                      "SELECT origin, COUNT(*) AS n FROM weight GROUP BY origin ORDER BY n DESC"];
+
+        /* "unknown origin" is a question about the NULLs, and it is the one a
+         * sceptic asks first. Answering it with the total would be the same
+         * substitution this branch exists to remove. */
+        if (/\bunknown\b|\bno origin\b|\bunrecorded\b|\bmissing\b/.test(q)) {
+          const none = byOrigin.find(r => r.origin === null);
+          return {
+            text: `${N.derCount(none ? none.n : 0)} of ${N.der(total.n)} ` +
+                  `weigh-ins name no origin at all. The value is real; its ` +
+                  `custody is not written down, and those are different facts.`,
+            sql: cite,
+          };
+        }
+
+        /* An origin named in the question, matched against what the record
+         * actually holds. `athlete+scale` is one origin and two tokens. */
+        const named = byOrigin.filter(r => r.origin && String(r.origin)
+          .split(/[^a-z0-9]+/i).some(tok => tok.length > 2 && has(q, tok)));
+        if (named.length) {
+          return {
+            text: N.listify(named.map(r =>
+              `${N.derCount(r.n)} from <code>${esc(r.origin)}</code>`)) +
+              `, out of ${N.der(total.n)} weigh-ins in the record.`,
+            sql: cite,
+          };
+        }
+        return {
+          text: `${N.derCount(total.n)} weigh-ins, by origin: ` +
+                N.listify(byOrigin.map(r => r.origin
+                  ? `${N.der(r.n)} <code>${esc(r.origin)}</code>`
+                  : `${N.der(r.n)} with none recorded`)) +
+                `. I can count them because counting rows is a property of the ` +
+                `query; the origins are the engine's own words, not a grouping ` +
+                `made here.`,
+          sql: cite,
+        };
+      }
+
       const sql = "SELECT date, kg, origin, source, capture FROM weight " +
                   "WHERE kg IS NOT NULL ORDER BY date DESC LIMIT 1";
       const r = query(sql)[0];
