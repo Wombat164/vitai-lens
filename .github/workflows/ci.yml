@@ -4,6 +4,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  # THE CANARY HAS TO SING WHEN NOBODY IS IN THE ROOM.
+  #
+  # The `conformance` job below argues, correctly, that "a conformance
+  # instrument that only notices drift when someone looks is not an
+  # instrument". It then only ran on push and pull_request - which is
+  # precisely "when someone looks". Between 2026-08-05 and 2026-08-10 nobody
+  # pushed here, twelve contracts landed in the engine, and this repo reported
+  # nothing: last run green, pin at 31, engine at 43.
+  #
+  # The reasoning was right and the wiring defeated it. A daily schedule is
+  # what makes the sentence true.
+  schedule:
+    - cron: "17 6 * * *"
+  # And a manual trigger, so drift can be checked on purpose after an engine
+  # merge without waiting for the next morning.
+  workflow_dispatch:
 
 jobs:
   narrator:

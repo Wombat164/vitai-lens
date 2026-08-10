@@ -33,6 +33,7 @@ import argparse
 import shutil
 import sqlite3
 import sys
+import os
 import tempfile
 from pathlib import Path
 
@@ -43,9 +44,23 @@ HERE = Path(__file__).resolve().parent.parent
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    # THE DEFAULT IS THE SIBLING CHECKOUT, NOT ONE MACHINE'S ABSOLUTE PATH.
+    #
+    # This defaulted to an absolute Windows path under one person's home
+    # directory, in a PUBLIC repo. Two things wrong with it and the smaller one
+    # is the privacy: an operator's username should not ship in an open-source
+    # tool. The larger one is that the default worked for exactly one person,
+    # so anybody else running the documented command got "no example athlete
+    # at ..." naming a directory that has never existed on their machine.
+    #
+    # `../vitai` is the layout CI lays out and the one the README describes,
+    # and `VITAI_PATH` covers a checkout kept somewhere else without editing
+    # the file.
     ap.add_argument("--vitai", type=Path,
-                    default=Path(r"C:/Users/Matty/Projects/vitai"),
-                    help="path to the vitai repo holding examples/demo")
+                    default=Path(os.environ.get("VITAI_PATH")
+                                 or HERE.parent / "vitai"),
+                    help="path to the vitai repo holding examples/demo "
+                         "(default: ../vitai, or $VITAI_PATH)")
     args = ap.parse_args()
 
     src = args.vitai / "examples" / "demo"
