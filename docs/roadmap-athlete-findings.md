@@ -41,11 +41,41 @@ than the design did:
 
 Every phase below is that sentence, applied somewhere.
 
+## Phase 0: follow the engine (standing, always first)
+
+Added 2026-08-15, because this document was missing the one kind of work this
+client exists to do. Everything below is about ANSWERING WELL; this is about
+being the instrument, and where the two compete this wins.
+
+The rule: **the canary is only worth having if its next red means something.**
+A conformance client that goes red when the engine moves is working. One that
+has been red since Thursday is furniture, and a reader has correctly learned to
+scroll past it. Catching up is therefore not maintenance to be fitted around
+features - here it IS the feature.
+
+- **Follow 47** - DONE 2026-08-15. Pin moved 46 to 47, demo rebuilt, suites
+  green. The canary had been red three consecutive mornings (13th, 14th, 15th)
+  against an engine that moved on the 12th, which is what prompted this
+  section existing at all.
+- **Render `crossings`** (contract 47). Round-number and personal-first
+  milestones read from the weight series, goal-independent - so unlike every
+  other progress figure here, it says something on a record with no goal
+  declared. Native stats-deck material and the obvious next surface.
+- **Run the contract-38 subtraction.** `units` and `aliases` are published by
+  the engine and may let this client DELETE a hand-maintained vocabulary. A
+  listed subtraction nobody has run is not a subtraction.
+- **Close or rescope issue #4.** Its title and body describe being twelve
+  contracts behind, which stopped being true on 2026-08-12. An open issue that
+  misstates its own gap by an order of magnitude is worse than no issue.
+- **Re-measure Phase 4.1's coverage numbers before building on them.** "17 of
+  35 tables read by no surface" was measured against a much older contract;
+  35 is no longer the denominator.
+
 ## Status
 
 **Done** (2026-08-05): the three routing fixes below, all of Phase 2, Phase
 3.2, and Phase 3.3 - which turned out to be a false positive hiding a real
-bug, recorded in its own section.
+bug, recorded in its own section. **2026-08-15**: Phase 0's catch-up to 47.
 
 **Open**: Phase 1, Phase 2.5 (the `versus` half) and 2.6, Phase 3.1, 3.4,
 3.5, 3.6 and 3.7, and all of Phase 4. **The engine track is filed.**
