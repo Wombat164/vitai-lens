@@ -159,6 +159,20 @@ const Ask = (() => {
   const SUPERLATIVE_RE = /\b(most recent|latest|newest|longest|shortest|biggest|largest|best|worst|hardest|easiest|fastest|slowest|heaviest|lightest|most|least|highest|lowest|peak)\b/;
   const COMPARISON_RE = /\b(compare|compared|versus|vs|better than|worse than|more than|less than)\b/;
   const AGGREGATE_RE = /\b(total|totals|altogether|average|averages|mean|sum|per week|typical)\b/;
+
+  /* "AVERAGE HEART RATE" IS THE NAME OF A COLUMN, not a request to compute.
+   *
+   * Same shape as the `mean`-as-a-verb and `most recent`-as-a-selection fixes:
+   * a word with two meanings firing the rule written for the other one. The
+   * engine's field is literally `avg_hr`, so asking for it by its own name was
+   * refused with the arithmetic boilerplate - and the ambiguity refusal above
+   * tells the reader to ask for the session average by name, which made this
+   * a promise the page then broke.
+   *
+   * Narrow on purpose: only where `average`/`avg` is bound to the heart-rate
+   * noun. "Average distance" really is an aggregate the engine does not emit,
+   * and still refuses. */
+  const NAMED_AVERAGE_RE = /\b(average|avg)\s+(heart\s*rate|hr)\b/;
   const RELATIVE = ["last week", "this week", "past week", "last month",
                     "this month", "last year", "this year", "yesterday",
                     "today", "recently", "lately", "so far", "last 7 days",
@@ -269,7 +283,8 @@ const Ask = (() => {
     if (sup) out.superlative = sup[1];
     out.comparison = COMPARISON_RE.test(q);
     const agg = q.match(AGGREGATE_RE);
-    if (agg) out.aggregate = agg[1];
+    // A column named `avg_hr` asked for by its own name is not arithmetic.
+    if (agg && !NAMED_AVERAGE_RE.test(q)) out.aggregate = agg[1];
     /* Two words in AGGREGATE_RE carry a second, commoner meaning, and both
      * produced a confident arithmetic refusal for a question containing no
      * arithmetic. Testers hit each of them within minutes.
@@ -1173,6 +1188,55 @@ const Ask = (() => {
       sql: [sql, loSql, hiSql, nSql],
     };
   });
+
+  /* `avg_hr` LIVES ON A SESSION AND HAD NO ANSWER AT ALL.
+   *
+   * `daily-metric` covers the `daily` columns, and heart rate during training
+   * is not one of them, so every question naming it fell to the generic
+   * did-not-understand text while 28 session rows carried the figure.
+   *
+   * Found by writing the ambiguity refusal above: it told the reader to "ask
+   * for the resting heart rate or the session average by name and either will
+   * answer", and the session average did not answer. A refusal that sends the
+   * reader somewhere there is nothing is worse than a terse one - it is
+   * Phase 2.5's defect wearing a helpful face - so the promise is made true
+   * here rather than withdrawn.
+   *
+   * Scored at 5, below `conflicts` at 7, so "did any sources disagree about my
+   * heart rate" still reaches the answer about disagreement rather than this
+   * one. The sentence names what it is the average OF, because the whole point
+   * of the refusal above is that the two heart-rate measures are different
+   * questions. */
+  intent("session-hr", (q, s) => (s.metric === "avg_hr" ? 5 : 0),
+    (q, s, query) => {
+      const nSql = "SELECT COUNT(avg_hr) AS n FROM sessions";
+      const lastSql = "SELECT date, type, avg_hr FROM sessions " +
+                      "WHERE avg_hr IS NOT NULL ORDER BY date DESC LIMIT 1";
+      const hiSql = "SELECT date, type, avg_hr FROM sessions " +
+                    "WHERE avg_hr IS NOT NULL ORDER BY avg_hr DESC, date LIMIT 1";
+      const n = query(nSql)[0], last = query(lastSql)[0], hi = query(hiSql)[0];
+      if (!n || !n.n || !last) {
+        return {
+          text: "No session in this record carries an average heart rate, so " +
+                "there is nothing here to report. The resting heart rate is a " +
+                "different measure and is recorded on its own.",
+          sql: nSql,
+        };
+      }
+      return {
+        text: `Average heart rate is recorded on ${N.der(n.n, "sessions")}. ` +
+              `The last is ${N.rec(last.avg_hr, "bpm", 0)} on ` +
+              `${esc(last.date)} (<code>${esc(last.type)}</code>), and the ` +
+              `highest ${N.rec(hi.avg_hr, "bpm", 0)} on ${esc(hi.date)} ` +
+              `(<code>${esc(hi.type)}</code>). ` +
+              `That is the average DURING a session, which is a different ` +
+              `measure from the resting heart rate the daily rows carry - ` +
+              `ask for the resting one by name and you will get that instead. ` +
+              `Two rows, picked out; no mean across them, because that is a ` +
+              `number appearing in no row.`,
+        sql: [nSql, lastSql, hiSql],
+      };
+    });
 
   /* The gate names a precondition. Its history was unreachable, and one of
    * the three results in this record is a failure. */
