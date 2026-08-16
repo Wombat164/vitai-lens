@@ -345,6 +345,54 @@ ok("unknown kind: the three known kinds never trip it",
    && everyKind.length === 1,
    `${everyKind.length} messages`);
 
+/* ---- observed_days: state the fraction, grade nothing (contract 39) ------
+ *
+ * The defect is invisible rather than wrong. `window_days` is the denominator
+ * a reader assumes and `observed_days` is the numerator nobody had, so a
+ * weekly average built from two logged days rendered exactly like one built
+ * from seven. This corpus publishes eleven such rows.
+ *
+ * The second assertion matters as much as the first. The engine ships NO
+ * threshold here on purpose - "the engine reports the fraction and lets the
+ * reader judge" - so a client that called a thin window sparse, poor or
+ * unreliable would be inventing the cutoff the engine refused to invent.     */
+const observed = Narrator.RULES.find(r => r.id === "observed-days");
+ok("observed-days: rule exists", !!observed);
+
+/* Silent when every window is fully observed. Absence of the finding is not
+ * the same as a finding of completeness, and a sentence on every deck would
+ * be a sentence nobody reads. */
+ok("observed-days: silent when nothing is partly observed",
+   observed.run(() => []).length === 0);
+
+{
+  const partial = [{ metric: "easy_hr", window_days: 7, observed_days: 2,
+                     n: 7, total: 11 },
+                   { metric: "easy_hr", window_days: 7, observed_days: 3,
+                     n: 4, total: 11 }];
+  const t = strip(observed.run(() => partial)[0].text);
+
+  ok("observed-days: states the numerator and the denominator",
+     /\b2 of 7 days\b/.test(t) && /\b3 of 7 days\b/.test(t), t.slice(0, 120));
+  ok("observed-days: names the metric it is about",
+     /easy_hr/.test(t), t.slice(0, 120));
+  /* The total is the engine's window function, not a sum taken here - it must
+   * appear, and grounding above proves it traces to a cited row. */
+  ok("observed-days: reports the total the query returned",
+     /\b11\b/.test(t), t.slice(0, 90));
+
+  const GRADING = /\b(sparse|insufficient|unreliable|untrustworthy|poor|weak|inadequate|too few|not enough|worrying|concerning|bad)\b/i;
+  ok("observed-days: grades nothing", !GRADING.test(t),
+     (GRADING.exec(t) || [])[0]);
+
+  // And the same over what the demo really renders.
+  const live = messages.find(m => m.rule === "observed-days");
+  ok("observed-days: the demo produced it", !!live);
+  ok("observed-days: the live text grades nothing",
+     !live || !GRADING.test(strip(live.text)),
+     live ? (GRADING.exec(strip(live.text)) || [])[0] : "");
+}
+
 /* ---- no message is empty or unterminated ------------------------------- */
 for (const m of messages) {
   const t = strip(m.text).trim();
