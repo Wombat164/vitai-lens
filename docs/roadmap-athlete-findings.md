@@ -57,25 +57,99 @@ features - here it IS the feature.
   green. The canary had been red three consecutive mornings (13th, 14th, 15th)
   against an engine that moved on the 12th, which is what prompted this
   section existing at all.
-- **Render `crossings`** (contract 47). Round-number and personal-first
-  milestones read from the weight series, goal-independent - so unlike every
-  other progress figure here, it says something on a record with no goal
-  declared. Native stats-deck material and the obvious next surface.
-- **Run the contract-38 subtraction.** `units` and `aliases` are published by
-  the engine and may let this client DELETE a hand-maintained vocabulary. A
-  listed subtraction nobody has run is not a subtraction.
-- **Close or rescope issue #4.** Its title and body describe being twelve
-  contracts behind, which stopped being true on 2026-08-12. An open issue that
-  misstates its own gap by an order of magnitude is worse than no issue.
-- **Re-measure Phase 4.1's coverage numbers before building on them.** "17 of
-  35 tables read by no surface" was measured against a much older contract;
-  35 is no longer the denominator.
+- **Render `crossings`** - DONE 2026-08-16 (contract 47), and the `band` kind
+  plus an unknown-kind refusal followed at 48. Round-number, personal-first and
+  band milestones read from the weight series, goal-independent - so unlike
+  every other progress figure here, they say something on a record with no goal
+  declared.
+- **Run the contract-38 subtraction** - RUN 2026-08-16, and it is **not a
+  subtraction**. Nothing is deleted. See "What the subtraction actually found"
+  below.
+- **Close or rescope issue #4** - DONE 2026-08-16. Rescoped rather than closed:
+  the twelve-contract gap is gone, and what remains under it is real.
+- **Re-measure Phase 4.1's coverage numbers before building on them** -
+  MEASURED 2026-08-16, below. Not acted on.
+
+### What the subtraction actually found
+
+The item assumed the engine publishes `units` and `aliases` in a form this
+client can consume, so the local tables could be deleted. Measured against the
+engine at contract 48, all three premises fail, and the third fails hardest.
+
+**The read model does not carry them.** `health.db` has 40 tables and none is
+`units` or `aliases`. They are returned by `vitai.api.field_types()`, a PYTHON
+function. This client is a browser reading a SQLite file through sql.js and has
+no Python at runtime, so there is nothing here to read. Adopting them at all
+would need a generated artifact, built through the engine the way `demo/`
+already is, so the `conformance` job would catch it going stale. That is a
+build-step proposal, not a deletion.
+
+**The unit map is a different fact from the engine's units.** The engine
+publishes `{label, ucum}`: a word and an authoritative code. This client prints
+a display SYMBOL, which is neither. Eleven of the twelve local entries have an
+engine entry, and two of those disagree in a way that would be visible on
+screen:
+
+| field | lens prints | engine `ucum` | engine `label` |
+|---|---|---|---|
+| `rhr`, `avg_hr` | `bpm` | `/min` | beats per minute |
+| `steps` | `steps` | `{steps}` | steps |
+
+`/min` and `{steps}` are correct UCUM and wrong on a page. The remaining nine
+happen to coincide with the UCUM code. `external` is a local sentinel meaning
+"this quantity has no unit" and has no engine entry at all. **So the display
+symbol is a third thing the engine does not publish**, and that gap is worth an
+issue upstream rather than a deletion here.
+
+**The alias map is a union with a conflict, not a superset.** Of 32 local
+entries, 12 are published by the engine and 20 are not. In the other direction
+the engine publishes 22 aliases this client does not have. The two lists are
+built for different matchers: the engine's are phrases ("how far", "how much
+sleep", "resting heart rate", "step count"), this client's are single tokens,
+because its tokeniser splits on whitespace and drops stopwords before matching.
+
+One is not a gap but a **disagreement**: the engine maps `pulse` to `avg_hr`,
+and this client maps it to `rhr`. Two clients answering "what was my pulse"
+would return different metrics, and neither is marked as a guess. That is a
+routing defect and is listed with the Phase 1 work rather than fixed in
+passing.
+
+### Phase 4.1 coverage, re-measured 2026-08-16
+
+Measured against `demo/health.db` at contract 48. The old figures were "17 of
+35 tables read by no surface, 100 of 433 columns null".
+
+| | old | now |
+|---|---|---|
+| tables | 35 | **40** |
+| read by no surface | 17 | **20** |
+| columns | 433 | **577** |
+| wholly null in the demo | 100 | **144** |
+
+The null figure splits, and the halves are different facts. **38** of the 144
+are columns of the four tables the demo leaves EMPTY (`artifacts`,
+`escalations`, `protocols`, `regimes`) - null because there are no rows, which
+says nothing about the column. The other **106** are genuinely unfilled columns
+in the 539 columns of populated tables.
+
+"Read by no surface" counts a table with no `FROM` or `JOIN` naming it in
+`narrator.js`, `ask.js`, `index.html` or `tools/narrate.js`: `artifacts`,
+`capabilities`, `comparability`, `conservation`, `context`, `contributions`,
+`emissions`, `escalations`, `events`, `inferences`, `instruments`, `journal`,
+`justifications`, `measurements`, `plans`, `protocols`, `regimes`,
+`retractions`, `sets`, `thresholds`.
+
+Not acted on, per the item. Recorded so the next person builds on a denominator
+that is true.
 
 ## Status
 
 **Done** (2026-08-05): the three routing fixes below, all of Phase 2, Phase
 3.2, and Phase 3.3 - which turned out to be a false positive hiding a real
 bug, recorded in its own section. **2026-08-15**: Phase 0's catch-up to 47.
+**2026-08-16**: Phase 0 clears - 48 followed, `crossings` rendered with all
+three kinds and an unknown-kind refusal, the contract-38 subtraction run and
+answered, issue #4 rescoped, Phase 4.1 re-measured.
 
 **Open**: Phase 1, Phase 2.5 (the `versus` half) and 2.6, Phase 3.1, 3.4,
 3.5, 3.6 and 3.7, and all of Phase 4. **The engine track is filed.**
