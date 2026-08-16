@@ -136,6 +136,97 @@ if (gate.length) {
      gateMsg && strip(gateMsg.text).includes(gate[0].escalation.replace(/\s+/g, " ").trim()));
 }
 
+/* ---- crossings: two kinds, two sentences (contract 47) ------------------ */
+/* The defect this guards is not a wrong number. It is a TRUE number placed in
+ * a sentence that inverts its meaning.
+ *
+ * Both crossing kinds carry `previous_value` and `previous_date`. On a
+ * personal first they name the record the reading beat. On a round number they
+ * name the last reading ALREADY ON THE SIDE just arrived at, which can sit
+ * further from the level than the reading taken immediately before - so
+ * printed as "(was X)" a crossing DOWNWARD reads as a gain.
+ *
+ * GROUNDING CANNOT CATCH THIS, which is why these tests exist separately: X is
+ * in the cited rows, so the sentence is perfectly grounded and perfectly
+ * wrong. A test over the rendered text is the only thing that sees it.       */
+const crossings = Narrator.RULES.find(r => r.id === "crossings");
+const chron = (html) => html.split("<br>").filter(l => l.includes('class="when"'));
+
+ok("crossings: rule exists", !!crossings);
+
+/* Absence is absence: a record with fewer than two weight readings has no
+ * crossings, and that renders as nothing - not an error, and not an empty box
+ * implying a failure to look. */
+ok("crossings: silent on a record with none",
+   crossings.run(() => []).length === 0);
+
+/* THE REGRESSION THAT MATTERS, on a synthetic row so it holds whatever the
+ * demo later becomes. 79.4 is the last reading already below 80; the fact
+ * being reported is that the series is back under 80 since that date. */
+const trap = [{ date: "2030-04-13", kind: "round_number", metric: "kg",
+                value: 80, direction: "down",
+                previous_value: 79.4, previous_date: "2030-04-10" }];
+const trapLine = strip(chron(crossings.run(() => trap)[0].text)[0]);
+ok("crossings: a round number never prints previous_value as a former weight",
+   !trapLine.includes("79.4"), trapLine);
+ok("crossings: a round number names the date it was last on this side",
+   trapLine.includes("since 2030-04-10"), trapLine);
+
+/* A null previous_date is the STRONGER claim, not a missing value: the level
+ * was never reached from that side before. */
+const firstEver = [{ date: "2030-04-09", kind: "round_number", metric: "kg",
+                     value: 80, direction: "down",
+                     previous_value: null, previous_date: null }];
+const firstLine = strip(chron(crossings.run(() => firstEver)[0].text)[0]);
+ok("crossings: a null previous_date reads as a first, never as 'since null'",
+   firstLine.includes("for the first time in this record")
+   && !/\bsince\b/.test(firstLine), firstLine);
+
+/* The other half of the distinction: the same two columns, said the other way
+ * round, and here naming the value IS correct. */
+const beat = [{ date: "2030-06-30", kind: "personal_first", metric: "kg",
+                value: 75.5, direction: "down",
+                previous_value: 75.8, previous_date: "2030-06-27" }];
+const beatLine = strip(chron(crossings.run(() => beat)[0].text)[0]);
+ok("crossings: a personal first does name the reading it beat",
+   beatLine.includes("75.8") && beatLine.includes("beating"), beatLine);
+
+/* And the same discipline held against the real demo rows. */
+const crossRows = query("SELECT date, kind, metric, value, direction, " +
+                        "previous_value, previous_date FROM crossings");
+if (crossRows.length) {
+  const msg = messages.find(m => m.rule === "crossings");
+  ok("crossings: the demo produced a message", !!msg);
+  const lines = msg ? chron(msg.text) : [];
+  ok("crossings: every row reaches the page",
+     lines.length === crossRows.length,
+     `${lines.length} lines for ${crossRows.length} rows`);
+  ok("crossings: every line names its kind",
+     lines.length > 0 &&
+     lines.every(l => /<code>(round_number|personal_first)<\/code>/.test(l)));
+
+  for (const r of crossRows) {
+    // Only where the two differ. Where the rung and the previous reading are
+    // the same number, the number belongs on the line as the rung.
+    if (r.kind !== "round_number") continue;
+    if (r.previous_value === null || r.previous_value === r.value) continue;
+    // Matched on the leading date span: a later row's `previous_date` can be
+    // this row's date, so a bare includes() finds the wrong line.
+    const line = lines.find(l => l.includes(`class="when">${r.date}</span>`) &&
+                                 l.includes("<code>round_number</code>"));
+    ok(`crossings: ${r.date} round number omits its previous_value`,
+       !!line && !strip(line).includes(String(r.previous_value)),
+       line ? strip(line) : "no line found");
+  }
+
+  // Newest first, read off the rendered order rather than trusted from the
+  // ORDER BY that produced it.
+  const dates = lines.map(l => (/(\d{4}-\d{2}-\d{2})/.exec(strip(l)) || [])[1]);
+  ok("crossings: rendered newest first",
+     dates.every((d, i) => i === 0 || (dates[i - 1] && d && dates[i - 1] >= d)),
+     dates.join(" "));
+}
+
 /* ---- no message is empty or unterminated ------------------------------- */
 for (const m of messages) {
   const t = strip(m.text).trim();
