@@ -684,6 +684,53 @@ const Narrator = (() => {
     return [{ tone: "note", text, sql }];
   });
 
+  /* Contract 39, and the defect it closes is invisible rather than wrong.
+   *
+   * `window_days` is the denominator a reader assumes - "the last 7 days" - and
+   * `observed_days` is the numerator nobody had. Without it a weekly average
+   * standing on two logged days renders identically to one standing on seven,
+   * and this record ships eleven such rows: seven `easy_hr` weeks built from
+   * two days each.
+   *
+   * NO GRADING, and that is the engine's decision rather than a gap here. The
+   * contract note is explicit - "the engine reports the fraction and lets the
+   * reader judge" - because it has been bitten by cutoffs it invented. So there
+   * is no badge, no colour and no word like sparse: a client that graded this
+   * would be inventing exactly the threshold the engine refused to.
+   *
+   * WORDING IS THIS CLIENT'S OWN, stated because the issue asking for it
+   * assumed otherwise. Nothing upstream renders `observed_days` in prose -
+   * checked across `cli.py`, `report.py` and the wiki - so there was no
+   * phrasing to mirror, only the doctrine above to follow.
+   *
+   * The total comes from a window function rather than from adding the group
+   * counts here, for the reason the `verdicts` and `provenance` rules give: a
+   * sum computed in this file is a quantity the "show the rows" control would
+   * not show. */
+  rule("observed-days", "attainment", 23.5, (q) => {
+    const sql = "SELECT metric, window_days, observed_days, COUNT(*) AS n, " +
+                "SUM(COUNT(*)) OVER () AS total FROM verdicts " +
+                "WHERE observed_days IS NOT NULL AND window_days IS NOT NULL " +
+                "AND observed_days < window_days " +
+                "GROUP BY metric, window_days, observed_days ORDER BY n DESC";
+    const rs = q(sql);
+    if (!rs.length) return [];
+    const parts = rs.map(r =>
+      `${derCount(r.n)} <code>${esc(r.metric)}</code> ` +
+      `${plural(r.n, "week")} over ${der(r.observed_days)} of ` +
+      `${der(r.window_days)} days`);
+    return [{
+      tone: "note",
+      text: `${cap(derCount(rs[0].total))} of the weekly figures above stand ` +
+            `on fewer days than the window they state: ` + listify(parts) + ". " +
+            `The engine reports that fraction and sets no threshold against ` +
+            `it, on purpose, so neither does this: it will not say how thin is ` +
+            `too thin. Read it as the denominator you would otherwise have ` +
+            `assumed was full, rather than as a mark against those figures.`,
+      sql,
+    }];
+  });
+
   /* Claims that were merged. The record changing its mind is a feature and
    * ought to be visible rather than quietly resolved behind the read model. */
   rule("merged", "record", 24, (q) => {

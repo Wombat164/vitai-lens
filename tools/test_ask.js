@@ -174,6 +174,50 @@ for (const q of QUALIFIED) {
      a("how many sessions have I logged").kind === "answer");
 }
 
+/* ---- a word that names two measures names neither -----------------------
+ *
+ * Found by this repo's own audit of the engine's published aliases: the engine
+ * publishes `pulse` for `avg_hr`, this client mapped it to `rhr`, and two
+ * clients answering "what was my pulse" returned different metrics with
+ * neither marking the choice. Repointing the table would have made the two
+ * agree and left both wrong.
+ *
+ * Neither is defensible as an answer, and the RECORD carries the evidence
+ * rather than this comment asserting it: a `capabilities` row declares `rhr` a
+ * proxy for "a daytime spot statistic, not the nightly minimum", and the rhr
+ * rows here name no origin, so nothing can be joined to them and competence
+ * resolves to `unknown`. `avg_hr` is a training figure.
+ *
+ * The controls are the important half. A refusal that swallowed every question
+ * containing a heart-rate word would be worse than the defect.               */
+{
+  const a = (q) => Ask.answer(q, query);
+  const amb = a("what was my pulse");
+
+  ok("a bare 'pulse' refuses instead of choosing", amb.kind === "refusal",
+     `got ${amb.kind} via ${amb.matched}`);
+  ok("and it names BOTH candidates",
+     /rhr/.test(strip(amb.text)) && /avg_hr/.test(strip(amb.text)),
+     strip(amb.text).slice(0, 120));
+  /* The whole point: no figure. A refusal carrying 50 bpm would have answered
+   * the question it just said it could not answer. */
+  ok("and it quotes no reading at all",
+     !/\d/.test(strip(amb.text)), strip(amb.text).slice(0, 140));
+  ok("and it says why each candidate is not simply 'your pulse'",
+     /proxy/.test(strip(amb.text)) && /session/.test(strip(amb.text)),
+     strip(amb.text).slice(0, 160));
+
+  // CONTROLS: a disambiguated question still answers, or this is a word ban.
+  ok("CONTROL: 'resting pulse' still answers",
+     a("what is my resting pulse").matched === "daily-metric");
+  ok("CONTROL: 'resting heart rate' still answers",
+     a("what is my resting heart rate").matched === "daily-metric");
+  ok("CONTROL: the bare slug still answers",
+     a("whats my rhr").matched === "daily-metric");
+  ok("CONTROL: an unrelated daily metric is untouched",
+     a("how did I sleep").matched === "daily-metric");
+}
+
 /* ---- keyword misfires, and the controls that prove the rule survived ----
  * Each pair is a word with two meanings. The first assertion is that the
  * common meaning no longer trips a rule written for the other; the second is
