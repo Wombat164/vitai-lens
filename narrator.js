@@ -452,6 +452,91 @@ const Narrator = (() => {
     }];
   });
 
+  /* Contract 47. Round-number and personal-first crossings of the weight
+   * series: goal-independent and history-wide, which makes this the only
+   * progress surface on the page that says anything on a record with no goal
+   * declared. Everything else here is scored against something the athlete
+   * stated, so a record stating nothing gets silence.
+   *
+   * TWO KINDS, TWO SENTENCES, and that is the whole of this rule. Both kinds
+   * carry their evidence under the same two column names, and the names mean
+   * different things:
+   *
+   *   personal_first  previous_value/previous_date is the record this reading
+   *                   BEAT.
+   *   round_number    previous_value/previous_date is the last reading ALREADY
+   *                   ON THE SIDE just arrived at - which can be months old and
+   *                   NUMERICALLY FURTHER from the level than the reading taken
+   *                   immediately before the crossing.
+   *
+   * Rendered through one template the round number reads as its own opposite.
+   * The demo holds the case exactly: on 2030-04-13 the series crossed BELOW 80
+   * with a previous_value of 79.4, so "down to 80 (was 79.4)" would print a
+   * downward crossing as a six-hundred-gram gain. The engine shipped that
+   * defect once and corrected it, and its CLI wording is what is matched here
+   * rather than a second vocabulary invented for one fact.
+   *
+   * So the round-number sentence names a DATE and never a former weight, and
+   * tools/test_narrator.js asserts it against both the demo and a synthetic
+   * row. A null previous_date is the STRONGER claim rather than a missing
+   * value - the level was never reached from that side before - and gets its
+   * own sentence instead of a "since null" or a silence.                     */
+  rule("crossings", "weight", 31, (q) => {
+    const sql = "SELECT date, kind, metric, value, direction, " +
+                "previous_value, previous_date FROM crossings " +
+                "ORDER BY date DESC, kind";
+    const rs = q(sql);
+    /* Absence is absence. A record with fewer than two weight readings has no
+     * crossings, and an empty box under this chart would read as a failure to
+     * look rather than as nothing having happened.                           */
+    if (!rs.length) return [];
+    const lines = rs.map(r => {
+      const side = r.direction === "down" ? "below" : "above";
+      let said;
+      if (r.kind === "round_number") {
+        /* `value` on this kind is the RUNG the series crossed, not a reading
+         * anybody took - db.py is explicit that the column carries different
+         * things by kind - so it takes the derived ink. Teal would say a scale
+         * reported it, and no scale did. */
+        const level = der(r.value, null, 2);
+        said = r.previous_date === null
+          ? `${esc(r.metric)} ${side} ${level} for the first time in this record`
+          : `first ${esc(r.metric)} ${side} ${level} since ${esc(r.previous_date)}`;
+      } else {
+        /* Here `value` IS the reading, and so is the extreme it beat. Both are
+         * observations and both are recorded ink. */
+        const arrow = r.direction === "down" ? "low" : "high";
+        const was = r.previous_date === null ? ""
+          : `, beating ${rec(r.previous_value, null, 2)} on ${esc(r.previous_date)}`;
+        said = `${esc(r.metric)} ${arrow} of ${rec(r.value, null, 2)}${was}`;
+      }
+      /* The kind is printed on every line under the engine's own name. A
+       * reader scanning the list cannot otherwise tell an all-time extreme
+       * from a threshold that can be re-crossed next week, and these two sit
+       * interleaved by date. */
+      return `<span class="when">${esc(r.date)}</span> ` +
+             `<code>${esc(r.kind)}</code> ${said}`;
+    });
+    return [{
+      tone: "note",
+      text: `The engine marks ${derCount(rs.length)} ` +
+            `${plural(rs.length, "crossing")} of this series, newest first.` +
+            `<span class="chron">` + lines.join("<br>") + `</span><br>` +
+            `None of these needs a goal. Every other progress figure on this ` +
+            `page is scored against something you declared, so a record that ` +
+            `declared nothing gets silence; a crossing is true or false of the ` +
+            `series alone. The two kinds are not interchangeable and they ` +
+            `carry their evidence under the same column names: a ` +
+            `<code>personal_first</code> names the reading it beat, while a ` +
+            `<code>round_number</code> names the last time the series was on ` +
+            `the side it has just arrived at. That earlier reading can be ` +
+            `older, and further from the level, than the one taken just ` +
+            `before the crossing - so it is given as a date and never as a ` +
+            `former weight.`,
+      sql,
+    }];
+  });
+
   /* Where the numbers came from. 162 of 193 rows arriving by unknown transit
    * is the single most honest thing this database has to say about itself.  */
   rule("provenance", "record", 21, (q) => {
