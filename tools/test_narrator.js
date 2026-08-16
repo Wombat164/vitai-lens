@@ -393,6 +393,53 @@ ok("observed-days: silent when nothing is partly observed",
      live ? (GRADING.exec(strip(live.text)) || [])[0] : "");
 }
 
+/* ---- capabilities: state them, never apply them (contract 44) ------------
+ *
+ * This is the first table this page reads that QUALIFIES other numbers rather
+ * than reporting its own, and the discipline is the whole point: a capability
+ * is keyed on `origin`, so it reaches a value only where that value named its
+ * instrument. Silence resolves to `unknown` by the engine's own rule, not to a
+ * default, so dimming or discounting a figure whose row named no origin would
+ * be this page making a join the engine declined to make.                    */
+const caps = Narrator.RULES.find(r => r.id === "capabilities");
+ok("capabilities: rule exists", !!caps);
+ok("capabilities: silent on a record that declares none",
+   caps.run(() => []).length === 0);
+
+{
+  const rows = query("SELECT origin, measures, competence, construct, basis, " +
+                     "condition, note FROM capabilities");
+  if (rows.length) {
+    const msg = messages.find(m => m.rule === "capabilities");
+    ok("capabilities: the demo produced it", !!msg);
+    const t = msg ? strip(msg.text) : "";
+
+    // Every declaration reaches the page, under the engine's own words.
+    for (const r of rows) {
+      ok(`capabilities: ${r.origin}/${r.measures} is reported`,
+         t.includes(r.measures) && t.includes(r.competence),
+         t.slice(0, 140));
+    }
+    /* A PROXY MUST CARRY ITS CONSTRUCT. Contract 44 requires one beside a
+     * proxy precisely because "proxy" alone does not say proxy for WHAT, and
+     * that construct is what settled the `pulse` question. */
+    for (const r of rows.filter(r => r.construct)) {
+      ok(`capabilities: the construct travels with the proxy`,
+         t.includes(r.construct), t.slice(0, 160));
+    }
+    /* A CONDITION MUST TRAVEL TOO: a competence quoted without its condition
+     * is a stronger claim than the record made. */
+    for (const r of rows.filter(r => r.condition)) {
+      ok(`capabilities: the condition travels with the competence`,
+         t.includes(r.condition), t.slice(0, 160));
+    }
+    // And it states rather than applies: no grading of anything.
+    ok("capabilities: applies nothing to the figures on the page",
+       !/\b(unreliable|discount|ignore|do not trust|untrustworthy|invalid)\b/i.test(t),
+       t.slice(0, 140));
+  }
+}
+
 /* ---- no message is empty or unterminated ------------------------------- */
 for (const m of messages) {
   const t = strip(m.text).trim();

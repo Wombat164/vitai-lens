@@ -731,6 +731,67 @@ const Narrator = (() => {
     }];
   });
 
+  /* Contract 44, and the first table this page reads that qualifies OTHER
+   * numbers rather than reporting its own.
+   *
+   * An instrument change looks exactly like a physiological one. `origin` says
+   * which instrument observed a value and nothing said what that instrument is
+   * competent at, so a device reporting a different measurand under a familiar
+   * name was indistinguishable from a body that had changed. `capabilities` is
+   * where the record says so, and no surface here read it.
+   *
+   * WHY IT MATTERS ENOUGH TO GO ON THE PAGE. This client's own audit of the
+   * word `pulse` turned on one of these rows: the record declares `rhr` a
+   * proxy for "a daytime spot statistic, not the nightly minimum", which is
+   * what settled that neither heart-rate field is "your pulse". A statement
+   * that decides a question about the record belongs where a reader can see
+   * it, not only where an auditor found it.
+   *
+   * STATED, NEVER APPLIED. This does not dim, badge or discount any figure. A
+   * capability is keyed on `origin`, and a row naming no origin cannot be
+   * joined to one - the engine's rule is that silence resolves to competence
+   * `unknown` rather than to a default. Marking values from that would be this
+   * page inventing the join the engine declined to make. So the declarations
+   * are reported, and what they do or do not reach is left to the reader.
+   *
+   * `condition` is printed where present because a capability can be
+   * conditional, and a competence quoted without its condition is a stronger
+   * claim than the record made. */
+  rule("capabilities", "record", 21.5, (q) => {
+    const sql = "SELECT origin, measures, competence, construct, basis, " +
+                "condition, note FROM capabilities " +
+                "ORDER BY competence, measures";
+    const rs = q(sql);
+    if (!rs.length) return [];
+    const parts = rs.map(r => {
+      /* A colon rather than "is", because the vocabulary is the engine's and
+       * reads as a label rather than a predicate: "scale on kg is measures"
+       * is the copula fighting the word. The words themselves are never
+       * paraphrased. */
+      const head = `<code>${esc(r.origin)}</code> on ` +
+                   `<code>${esc(r.measures)}</code>: ` +
+                   `<code>${esc(r.competence)}</code>`;
+      const why = r.construct ? `, standing in for ${quote(r.construct)}` : "";
+      const when = r.condition
+        ? `, and only under <code>${esc(r.condition)}</code>` : "";
+      return `${head}${why}${when} (${esc(r.basis)})`;
+    });
+    return [{
+      tone: "note",
+      text: `The record states what one of its instruments can and cannot ` +
+            `measure: ` + listify(parts) + ". " +
+            `Nothing on this page is dimmed or discounted by that, and the ` +
+            `omission is the honest one. A capability is keyed on the ` +
+            `instrument that observed a value, so a row naming no instrument ` +
+            `cannot be joined to one, and the engine's rule is that silence ` +
+            `resolves to <code>unknown</code> rather than to a default. ` +
+            `Applying these statements to values that never named their ` +
+            `origin would be this page making the join the engine declined ` +
+            `to make.`,
+      sql,
+    }];
+  });
+
   /* Claims that were merged. The record changing its mind is a feature and
    * ought to be visible rather than quietly resolved behind the read model. */
   rule("merged", "record", 24, (q) => {
