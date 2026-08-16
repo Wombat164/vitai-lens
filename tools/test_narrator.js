@@ -27,7 +27,21 @@ function ok(name, cond, detail) {
   console.log(`  FAIL ${name}${detail ? "\n         " + detail : ""}`);
 }
 
+/* A LINE BREAK IS WHITESPACE, and dropping it fabricates numbers.
+ *
+ * This removed every tag alike, so two chronology lines joined by `<br>` came
+ * back welded: "...on 2030-06-27" followed by "2030-06-27 ..." stripped to
+ * "...2030-06-272030-06-27...", and the tokeniser below read 272030 out of the
+ * seam. That number is in no row, so grounding reported it - correctly, on the
+ * text it was given, about a string that appears on no screen. The reader sees
+ * two lines.
+ *
+ * A false positive here is worse than it looks: this test is the mechanical
+ * proof behind the whole design, and one that cries wolf at a rule doing
+ * nothing wrong teaches the next reader to discount it. Only `<br>` is
+ * treated this way; the rest are inline and welding them is correct. */
 const strip = (html) => html
+  .replace(/<br\s*\/?>/gi, " ")
   .replace(/<[^>]+>/g, "")
   .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
