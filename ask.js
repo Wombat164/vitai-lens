@@ -569,8 +569,28 @@ const Ask = (() => {
    * now a refusal, correctly, except that a human reading it has no doubt.
    * Saying which keyword actually settles the question is better than
    * loosening the tie rule to let a coin-flip through. */
-  intent("goals", (q, s) =>
-    has(q, "goal", "goals") ? 6
+  /* DECISIVE WAS SIX, AND SIX LOST (Phase 1.1's surviving repro).
+   *
+   * "How is my weight goal" went to the `weight` intent at 7, because `weight`
+   * is a strong metric word and the literal `goal` was only worth 6 - so the
+   * question returned the latest weigh-in and said nothing about the goal it
+   * named. There IS a goal slugged `weight`. The same sentence about steps
+   * answered correctly, because `steps` is a weaker metric word, which meant
+   * one question shape gave two different kinds of answer depending on which
+   * metric it happened to name.
+   *
+   * The word plus a RESOLVED goal is what earns 8. The word alone stays at 6:
+   * where `matchGoal` cannot settle which goal is meant, this intent has no
+   * more claim on the question than before, and the tie and indecisive-match
+   * rules below it keep doing their work.
+   *
+   * Scoring rather than refusing, deliberately. A refusal here would withhold
+   * an answer the database gives - the failure this roadmap names when it
+   * moved the walk and June questions out of the refusal set - and there is no
+   * guess involved: the literal word settles it and `matchGoal` names the row.
+   * A slot refusal is for a slot NOBODY can honour, which is `origin`. */
+  intent("goals", (q, s, query) =>
+    has(q, "goal", "goals") ? (matchGoal(q, query) ? 8 : 6)
       : has(q, "target", "on track", "progress", "doing", "aim") ? 5 : 0,
     (q, s, query) => {
       const g = matchGoal(q, query);

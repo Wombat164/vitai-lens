@@ -349,6 +349,50 @@ for (const q of QUALIFIED) {
   ok("CONTROL: coverage still owns its own question",
      a("which days are missing").matched === "coverage");
 
+  /* Phase 1.1's surviving repro. "Decisive" was worth 6 and lost to `weight`
+   * at 7, so a question naming a goal returned the latest weigh-in - and the
+   * same sentence about steps answered correctly, because `steps` is a weaker
+   * metric word. One question shape, two kinds of answer, depending on which
+   * metric it happened to name.
+   *
+   * The consistency assertion is the one that matters: these two must agree,
+   * whatever they agree on. */
+  ok("a named goal beats the metric that shares its name",
+     a("how is my weight goal").matched === "goals",
+     `matched ${a("how is my weight goal").matched}`);
+  ok("and the answer is about the goal, not the weigh-in",
+     /Down to 78 kg/.test(strip(a("how is my weight goal").text)),
+     strip(a("how is my weight goal").text).slice(0, 90));
+  ok("the same shape about steps routes the same way",
+     a("how is my step goal").matched === a("how is my weight goal").matched);
+  for (const q of ["how am I doing on the weight goal",
+                   "whats my progress on the weight goal"]) {
+    ok(`phrasing reaches the goal too: "${q}"`, a(q).matched === "goals",
+       `matched ${a(q).matched}`);
+  }
+
+  /* CONTROLS. The word has to EARN the boost with a goal that resolves, or
+   * this becomes a rule that swallows every question containing "goal" - and
+   * worse, every question a goal TITLE happens to overlap. Two of this
+   * record's goals are titled around walking and weekly volume, and both of
+   * these questions matched a goal by title while being about neither. */
+  ok("CONTROL: a weekly-volume question is not captured",
+     a("how much did i walk last week").matched === "session-weeks",
+     `matched ${a("how much did i walk last week").matched}`);
+  ok("CONTROL: a session count is not captured",
+     a("how many walks").matched === "sessions",
+     `matched ${a("how many walks").matched}`);
+  ok("CONTROL: a bare metric question still reaches the metric",
+     a("what do they weigh").matched === "weight");
+  /* THE CONTROL FOR THE CONDITION ITSELF, and it was missing until a mutation
+   * showed the condition was unproven: boosting on the word alone passes every
+   * other assertion here. The word has to be earned by a goal that RESOLVES.
+   * "Did I change my goal" names no particular goal and is a plan-churn
+   * question; with the word alone worth 8 it stops reaching that answer. */
+  ok("CONTROL: the word alone does not capture a plan-churn question",
+     a("did I change my goal").matched === "plan-changes",
+     `matched ${a("did I change my goal").matched}`);
+
   // `record` is a noun here far more often than a superlative, and it had no
   // EXTREMES entry at all - so it could only ever block a question.
   ok("'my record' is not a request for a personal best",
