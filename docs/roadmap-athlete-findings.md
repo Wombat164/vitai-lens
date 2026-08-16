@@ -177,15 +177,79 @@ The spine. Most of pile (A) disappears here, and the rest gets cheaper.
 **1.1 An indecisive intent match says so.** Generalise what `matchGoal` now
 does for goals to intent selection itself: when the top-scoring intent is not
 decisively ahead, the honest answer names the readings and asks which was
-meant, rather than running the winner. *Repro: "how many sessions have I
-logged" routes to `coverage`.*
+meant, rather than running the winner.
+
+*Old repro, RETIRED 2026-08-16: "how many sessions have I logged" routed to
+`coverage`. It no longer does - `sessions` takes it 6 to 4, settled by one of
+the three routing fixes. Recorded as retired rather than deleted, so nobody
+re-reports it.*
+
+***Current repro, derived against contract 48:* "how is my weight goal"**
+returns the latest weigh-in - "The last weigh-in is 75.5 kg on 2030-06-30" -
+rather than the goal's progress. There IS a goal slugged `weight`, titled "Down
+to 78 kg, unhurried", and `matchGoal` resolves it from that exact question.
+`weight` beats `goals` 7 to 6. The same sentence about steps answers correctly,
+because `steps` is a weaker metric word than `weight` is - so one question
+shape gives two different kinds of answer depending on which metric it names.
+
+### What the margin rule should be, and the measurement says: none
+
+Measured over the 56 questions the suite answers, at contract 48.
+
+**Half of all answers have no rival at all.** 28 are SOLE matches - exactly one
+intent scores above zero - so there is no margin to threshold and no rule of
+this shape can reach them. The winning scores there run 4 to 10; none sits at
+the floor.
+
+**Of the 28 contested answers, the margins are:**
+
+| margin | answers | all correct? |
+|---|---|---|
+| 1 | 12 | yes |
+| 2 | 5 | yes |
+| 3 | 1 | yes |
+| 4 | 10 | yes |
+
+**A "must be N ahead" rule is not a badly-chosen threshold. It has no signal
+at all.** Every margin-1 answer in the corpus routes correctly - `conflicts`
+over `provenance`, `injuries` over `gate`, `weight` over `provenance`,
+`extremum` over `weight`, `goals` over `daily-metric`. Requiring a margin of 2
+would refuse twelve correct answers and catch zero wrong ones.
+
+There is a structural reason, and it is worth recording because it will hold
+after the numbers move. The three routing fixes made decisive words decisive,
+so where two intents now finish close, they are close because they are two
+routes to the SAME subject. Where two intents point at genuinely different
+subjects, they land on an EXACT tie - `goals` against `daily-metric`, both 5,
+on "how am I doing on steps" - and the tie rule already refuses that.
+
+**So 1.1 needs no threshold, and the one case that still reproduces is not a
+margin problem.** "How is my weight goal" names a goal, `matchGoal` resolves
+it, and the winning intent does not honour goals. That is Phase 1.2's shape -
+a slot the answerer cannot honour - with `goal` as the slot. The margin of 1 is
+incidental to it.
+
+Recommendation: **do not add a margin threshold.** Declare `goal` as a slot in
+the 1.2 pass, and 1.1 closes with it. If a later corpus produces a near-tie
+that routes wrongly and carries no unhonoured slot, reopen this with that case
+attached rather than with a number.
 
 **1.2 An answerer that receives a slot it cannot honour must refuse, not
 ignore.** The qualifier guard already does this for windows, superlatives and
 comparisons. Extend it: if the question named a metric, a session type, an
 origin or a goal and the answer does not use it, that is a miss and a miss is a
-refusal. *Repro: "how many of my runs are self reported" returns all 28 runs
-with the filter silently dropped.*
+refusal.
+
+*`origin` DONE 2026-08-16. Repro was "how many of my runs are self reported",
+which returned every run with the filter silently dropped; it now refuses and
+names the filter it could not honour. Origin is declared per intent rather than
+vetoed before scoring, because `weight` genuinely honours it. The run count in
+the original report was 28 and is 26 on the current demo - the defect was the
+dropped filter, not the figure.*
+
+*Remaining: `metric`, `sessionType` and `goal`, one declaration pass per
+intent. **`goal` is the one to do first** - it is what 1.1's surviving repro
+turns out to need.*
 
 ## Phase 2: stop the keyword misfires
 
