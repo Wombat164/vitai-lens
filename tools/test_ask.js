@@ -127,6 +127,53 @@ for (const q of QUALIFIED) {
      a.kind === "answer" ? `answered via ${a.matched}: ${strip(a.text).slice(0, 70)}` : "");
 }
 
+/* ---- Phase 1.2: a dropped FILTER is a miss, and a miss is a refusal ------
+ *
+ * The roadmap's repro: "how many of my runs are self reported" counted every
+ * run and dropped the filter. That is the worst shape this page produces -
+ * not a wrong number but a right number for a larger set, wearing the shape
+ * of the subset that was asked about.
+ *
+ * It is a SLOT and not a veto, which is why it could not join `comparison`
+ * and `streak` in the pre-scoring refusals: `weight` genuinely honours origin
+ * and answers "how many weigh-ins came from the scale" correctly. So origin
+ * is declared per intent and checked against the winner - the same shape as
+ * the crossings rule's known-kind allowlist, one surface over.
+ *
+ * The CONTROLS matter more than the refusal here. A guard that refuses every
+ * question mentioning a device would be strictly worse than the defect. */
+{
+  const a = (q) => Ask.answer(q, query);
+
+  const dropped = a("how many of my runs are self reported");
+  ok("a dropped origin filter refuses", dropped.kind === "refusal",
+     `got ${dropped.kind} via ${dropped.matched}`);
+  ok("and it says which filter it could not honour",
+     /origin|came from/.test(strip(dropped.text)), strip(dropped.text).slice(0, 90));
+  /* The point of the refusal: the un-narrowed figure must not appear in it.
+   * 26 is the count of ALL runs, which is what the defect reported. */
+  ok("and the whole-set figure does not appear in the refusal",
+     !/\b26\b/.test(strip(dropped.text)), strip(dropped.text).slice(0, 120));
+  ok("and it names the answer it would have given",
+     dropped.matched === "sessions", `matched ${dropped.matched}`);
+
+  ok("a second phrasing refuses too",
+     a("how many of my sessions were tracked by device").kind === "refusal");
+
+  // CONTROLS. An intent that DOES honour origin keeps answering, or this
+  // guard has taken away four working questions to fix one.
+  ok("CONTROL: origin-aware weight still answers 'from the scale'",
+     a("how many weigh-ins came from the scale").kind === "answer");
+  ok("CONTROL: and the unhyphenated spelling",
+     a("how many weigh ins came from the scale").kind === "answer");
+  ok("CONTROL: and the unknown-origin question",
+     a("how many weigh-ins have unknown origin").kind === "answer");
+  ok("CONTROL: the same question without the filter still answers",
+     a("how many runs did I do").kind === "answer");
+  ok("CONTROL: an ordinary session count is untouched",
+     a("how many sessions have I logged").kind === "answer");
+}
+
 /* ---- keyword misfires, and the controls that prove the rule survived ----
  * Each pair is a word with two meanings. The first assertion is that the
  * common meaning no longer trips a rule written for the other; the second is
