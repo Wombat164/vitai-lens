@@ -162,9 +162,29 @@ const Ask = (() => {
                     "today", "recently", "lately", "so far", "last 7 days",
                     "last 30 days"];
 
+  /* WHO OR WHAT OBSERVED THE ROW, as a qualifier (Phase 1.2).
+   *
+   * "How many of my runs are self reported" counted every run and dropped the
+   * filter, so a question about a SUBSET was answered with the whole set and
+   * nothing said so. That is pile (A) exactly: a well-formed, confident answer
+   * to a question nobody asked.
+   *
+   * An origin phrase is a slot rather than a veto, because one intent really
+   * does honour it - `weight` groups its rows by `origin` and answers "how
+   * many weigh-ins came from the scale" correctly. So this cannot be refused
+   * before scoring the way `comparison` and `streak` are; it has to be
+   * declared per intent and checked against the winner. */
+  const ORIGIN_RE = new RegExp("\\b(self[- ]report(ed)?|by device|" +
+    "device[- ]measured|tracked by(?: (?:a |the |my )?[a-z]+)?|transcribed|" +
+    "from (my|the) (watch|scale|app|phone|tracker)|" +
+    "came from the (scale|watch|app)|unknown origin|no origin|" +
+    "which (device|source)|what (device|source))\\b");
+
   function qualifiers(q) {
     const out = { window: null, superlative: null, comparison: false,
-                  aggregate: null, streak: false };
+                  aggregate: null, streak: false, origin: null };
+    const org = q.match(ORIGIN_RE);
+    if (org) out.origin = org[1];
     /* A STREAK IS A FIFTH QUALIFIER, and nothing here can honour one.
      *
      * "How many weeks in a row have I been on target for steps" returned the
@@ -541,7 +561,7 @@ const Ask = (() => {
               `engine does not emit one. The chart above shows every reading.`,
         sql,
       };
-    });
+    }, { origin: true });
 
   /* The literal word `goal` is DECISIVE and the rest are suggestive. "how did
    * I do against my step goal" tied `goals` against `daily-metric`, because
@@ -1875,6 +1895,17 @@ const Ask = (() => {
                  "Counting rows is fine and this page does it; adding up the " +
                  "values inside them is arithmetic the engine has not done " +
                  "and has not tested." }
+      /* Phase 1.2, and the one that motivated the slot half of this guard.
+       * Dropping a filter is worse than dropping a window: the answer is
+       * about a strictly larger set than the question, and the figure looks
+       * exactly like the one that was asked for. */
+      : qual.origin && !h.origin
+        ? { what: `a filter on where the rows came from (<em>${esc(qual.origin)}</em>)`,
+            why: "This answer counts every row of its kind and cannot narrow " +
+                 "them by who or what observed them. Answering anyway would " +
+                 "hand you a figure for the whole set wearing the shape of " +
+                 "the subset you asked about, and nothing in the sentence " +
+                 "would tell you which one you were reading." }
       : null);
     if (blocked) {
       return {
