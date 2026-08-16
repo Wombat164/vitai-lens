@@ -481,6 +481,14 @@ const Narrator = (() => {
    * row. A null previous_date is the STRONGER claim rather than a missing
    * value - the level was never reached from that side before - and gets its
    * own sentence instead of a "since null" or a silence.                     */
+  /* THE KINDS THIS PAGE HAS BEEN TAUGHT, as an allowlist rather than a set of
+   * things to exclude. A denylist would have to be updated by whoever adds the
+   * next kind to the ENGINE, in a repo they are not editing, which is not a
+   * control at all. This way an unrecognised kind refuses by default and the
+   * omission is loud. */
+  const KNOWN_CROSSING_KINDS = new Set(
+    ["round_number", "personal_first", "band"]);
+
   rule("crossings", "weight", 31, (q) => {
     const sql = "SELECT date, kind, metric, value, direction, " +
                 "previous_value, previous_date FROM crossings " +
@@ -493,48 +501,114 @@ const Narrator = (() => {
     const lines = rs.map(r => {
       const side = r.direction === "down" ? "below" : "above";
       let said;
-      if (r.kind === "round_number") {
-        /* `value` on this kind is the RUNG the series crossed, not a reading
-         * anybody took - db.py is explicit that the column carries different
-         * things by kind - so it takes the derived ink. Teal would say a scale
-         * reported it, and no scale did. */
+      if (r.kind === "round_number" || r.kind === "band") {
+        /* ONE SENTENCE FOR TWO KINDS, and it is the engine's own choice
+         * rather than a shortcut taken here: `crossings._last_on_destination_
+         * side` backs the evidence pair on both, so the pair means exactly the
+         * same thing, and `cli.py` renders them through one branch for that
+         * reason. A second copy would drift from the first.
+         *
+         * `value` on both is a LEVEL, not a reading anybody took - a rung on
+         * the ladder for `round_number`, a boundary for `band` - so it takes
+         * the derived ink. Teal would say a scale reported it, and none did.
+         *
+         * A BAND VALUE IS A NUMBER AND NEVER A NAME. The engine may compute
+         * the ratio and state the boundary as a boundary; it may never name
+         * the band, and that ruling binds this client too. The template holds
+         * `metric` and two figures and has nowhere a category word could sit -
+         * see docs/medical-boundary.md, where a bound stated as a bound is
+         * class (a) and a category is class (c). tools/test_narrator.js scans
+         * the whole rendered output for one. */
         const level = der(r.value, null, 2);
         said = r.previous_date === null
           ? `${esc(r.metric)} ${side} ${level} for the first time in this record`
           : `first ${esc(r.metric)} ${side} ${level} since ${esc(r.previous_date)}`;
-      } else {
+      } else if (r.kind === "personal_first") {
         /* Here `value` IS the reading, and so is the extreme it beat. Both are
          * observations and both are recorded ink. */
         const arrow = r.direction === "down" ? "low" : "high";
         const was = r.previous_date === null ? ""
           : `, beating ${rec(r.previous_value, null, 2)} on ${esc(r.previous_date)}`;
         said = `${esc(r.metric)} ${arrow} of ${rec(r.value, null, 2)}${was}`;
+      } else {
+        /* AN UNKNOWN KIND REFUSES, and this branch is the durable half of the
+         * feature.
+         *
+         * This rule shipped with `round_number` tested and everything else
+         * falling through to the personal-first sentence. Contract 48 then
+         * added `band`, and that fall-through would have rendered a boundary
+         * as "a low of 30, beating 25" - a sentence about the athlete's body
+         * that no row asserts. Dropping the row would have been better and is
+         * still not good; #387's own changelog names silent dropping as the
+         * defect it found elsewhere.
+         *
+         * So the branches are an ALLOWLIST and the default refuses. Contract
+         * 49 may add a fifth kind, and when it does this page will say it
+         * cannot describe that row rather than describing it as something it
+         * is not. A client that guesses which sentence fits an unfamiliar row
+         * is how a record ends up asserting what nobody recorded. */
+        said = `this page has no sentence for this kind of crossing, and ` +
+               `will not borrow one written for another`;
       }
       /* The kind is printed on every line under the engine's own name. A
        * reader scanning the list cannot otherwise tell an all-time extreme
-       * from a threshold that can be re-crossed next week, and these two sit
+       * from a threshold that can be re-crossed next week, and the kinds sit
        * interleaved by date. */
       return `<span class="when">${esc(r.date)}</span> ` +
              `<code>${esc(r.kind)}</code> ${said}`;
     });
-    return [{
+    const strange = [...new Set(rs.filter(r => !KNOWN_CROSSING_KINDS.has(r.kind))
+                                  .map(r => r.kind))];
+    const out = [{
       tone: "note",
       text: `The engine marks ${derCount(rs.length)} ` +
-            `${plural(rs.length, "crossing")} of this series, newest first.` +
+            `${plural(rs.length, "crossing")} read from this series, newest ` +
+            `first.` +
             `<span class="chron">` + lines.join("<br>") + `</span><br>` +
             `None of these needs a goal. Every other progress figure on this ` +
             `page is scored against something you declared, so a record that ` +
             `declared nothing gets silence; a crossing is true or false of the ` +
-            `series alone. The two kinds are not interchangeable and they ` +
-            `carry their evidence under the same column names: a ` +
+            `series alone. The kinds are not interchangeable and they carry ` +
+            `their evidence under the same column names: a ` +
             `<code>personal_first</code> names the reading it beat, while a ` +
-            `<code>round_number</code> names the last time the series was on ` +
-            `the side it has just arrived at. That earlier reading can be ` +
-            `older, and further from the level, than the one taken just ` +
-            `before the crossing - so it is given as a date and never as a ` +
-            `former weight.`,
+            `<code>round_number</code> and a <code>band</code> each name the ` +
+            `last time the series was on the side it has just arrived at. ` +
+            `That earlier reading can be older, and further from the level, ` +
+            `than the one taken just before the crossing - so those two are ` +
+            `given as a date and never as a former weight. ` +
+            /* Class (a) then class (b), and nothing else is available here.
+             * The record holds the boundary and holds no name for it, so the
+             * only honest closing move is to say the page stops there. Saying
+             * nothing at all would leave the reader to supply the missing
+             * word themselves, which is the failure this is guarding. */
+            `A <code>band</code> names a population-reference boundary the ` +
+            `series crossed: its value is the boundary itself and never your ` +
+            `own ratio on that date. The record carries no name for that ` +
+            `boundary, and neither will this page.`,
       sql,
     }];
+    if (strange.length) {
+      /* NO NUMBER IN THIS SENTENCE, deliberately. A total across several
+       * unknown kinds is a sum the cited rows do not contain - the grounding
+       * test grounds each kind's own tally, not their sum - so counting them
+       * would be this file deriving a quantity to complain about deriving
+       * quantities. The kinds are named instead, which is the useful part. */
+      out.push({
+        tone: "watch",
+        text: `${plural(strange.length, "One kind", "Some kinds")} of ` +
+              `crossing in this record ${plural(strange.length, "is", "are")} ` +
+              `unknown to this page: ` +
+              listify(strange.map(k => `<code>${esc(k)}</code>`)) + ". " +
+              `${plural(strange.length, "Its rows are", "Their rows are")} ` +
+              `listed above and left undescribed rather than ` +
+              `rendered through a sentence written for another kind. The ` +
+              `engine has moved and this client has not caught up yet, which ` +
+              `is the signal this repo exists to give rather than a fault in ` +
+              `the record.`,
+        sql,
+      });
+    }
+    return out;
   });
 
   /* Where the numbers came from. 162 of 193 rows arriving by unknown transit

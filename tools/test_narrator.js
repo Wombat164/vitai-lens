@@ -203,7 +203,7 @@ if (crossRows.length) {
      `${lines.length} lines for ${crossRows.length} rows`);
   ok("crossings: every line names its kind",
      lines.length > 0 &&
-     lines.every(l => /<code>(round_number|personal_first)<\/code>/.test(l)));
+     lines.every(l => /<code>(round_number|personal_first|band)<\/code>/.test(l)));
 
   for (const r of crossRows) {
     // Only where the two differ. Where the rung and the previous reading are
@@ -226,6 +226,124 @@ if (crossRows.length) {
      dates.every((d, i) => i === 0 || (dates[i - 1] && d && dates[i - 1] >= d)),
      dates.join(" "));
 }
+
+/* ---- the band kind, and the rule that governs it (contract 48) ---------- */
+/* "The engine may compute the ratio and state the boundary as a boundary. It
+ * may never name the band." That ruling binds this client too, and this is the
+ * one place in this repo where a well-meant sentence is a real harm rather
+ * than an imprecision: docs/medical-boundary.md makes a bound stated as a
+ * bound class (a) and safe, and a category name class (c) and a violation.
+ *
+ * THE WORD LIST BELOW IS AUTHORED HERE ON PURPOSE, not imported from the
+ * engine's `boundary_gate.py` and not copied from the engine's own test.
+ * Sharing one list would mean sharing exactly one blind spot: a word nobody
+ * thought of passes every check that exists. It is deliberately broader than
+ * it needs to be, because a false positive here costs a rewritten sentence and
+ * a false negative ships a category word to a reader.
+ *
+ * The demo cannot exercise this. `examples/demo` carries no `height_cm`, so
+ * no BMI can be computed and the engine mints no band rows for it - checked,
+ * not assumed. So the kind is driven synthetically here AND the whole rendered
+ * output is scanned regardless, so that the scan starts working the day a
+ * demo with a height arrives.                                                */
+const CATEGORY_WORDS = [
+  "underweight", "overweight", "obese", "obesity", "morbidly",
+  "healthy weight", "healthy range", "healthy bmi", "unhealthy",
+  "normal weight", "normal range", "normal bmi", "abnormal",
+  "ideal weight", "ideal range", "target weight range",
+  "classification", "classified as", "category", "categorised", "categorized",
+  "at risk", "high risk", "low risk", "danger", "dangerous",
+];
+const CATEGORY_RE = new RegExp(
+  "\\b(?:" + CATEGORY_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+                           .join("|") + ")\\b", "i");
+
+const bandRow = (over) => Object.assign({
+  date: "2030-05-05", kind: "band", metric: "bmi", value: 25,
+  direction: "down", previous_value: null, previous_date: "2030-02-02",
+}, over || {});
+
+const bandOut = crossings.run(() => [bandRow()]);
+const bandLine = strip(chron(bandOut[0].text)[0]);
+
+ok("crossings: a band states the boundary as a boundary",
+   bandLine.includes("first bmi below 25 since 2030-02-02"), bandLine);
+
+/* A band is NOT a personal first. Before this branch existed it fell through
+ * to that sentence and would have read "bmi low of 25, beating ..." - a claim
+ * about the athlete's own reading that no row makes. */
+ok("crossings: a band is never rendered as a personal first",
+   !bandLine.includes("beating") && !/\bbmi (low|high) of\b/.test(bandLine),
+   bandLine);
+
+/* A band's `value` is the boundary and never the athlete's ratio, so nothing
+ * on the line may be presented as their own figure. */
+ok("crossings: a band with no previous_date takes the first-time sentence",
+   strip(chron(crossings.run(() => [bandRow({ previous_date: null })])[0].text)[0])
+     .includes("bmi below 25 for the first time in this record"));
+
+/* THE RULE, over every byte this rule can emit for every kind - not just the
+ * band line. A category word smuggled into the surrounding prose would be the
+ * same violation in a place the line-level checks do not look. */
+const everyKind = crossings.run(() => [
+  bandRow(),
+  bandRow({ date: "2030-05-06", value: 30, direction: "up",
+            previous_value: 29.1, previous_date: "2030-01-01" }),
+  { date: "2030-05-07", kind: "round_number", metric: "kg", value: 80,
+    direction: "down", previous_value: 79.4, previous_date: "2030-04-10" },
+  { date: "2030-05-08", kind: "personal_first", metric: "kg", value: 75.5,
+    direction: "down", previous_value: 75.8, previous_date: "2030-04-11" },
+]);
+const everyKindText = everyKind.map(m => strip(m.text)).join(" ");
+ok("crossings: no category word anywhere in the rendered output",
+   !CATEGORY_RE.test(everyKindText),
+   (CATEGORY_RE.exec(everyKindText) || [])[0]);
+
+/* And over the real demo output too, so this keeps working without anyone
+ * remembering to extend it. */
+{
+  const msg = messages.find(m => m.rule === "crossings");
+  const all = messages.filter(m => m.rule === "crossings")
+                      .map(m => strip(m.text)).join(" ");
+  ok("crossings: no category word in the demo's rendered output",
+     !msg || !CATEGORY_RE.test(all), (CATEGORY_RE.exec(all) || [])[0]);
+}
+
+/* ---- an unknown kind refuses rather than mis-renders -------------------- */
+/* THE DURABLE HALF. This rule shipped with everything that was not a round
+ * number falling through to the personal-first sentence, so contract 48's
+ * `band` would have been rendered as a reading of the athlete's body. Contract
+ * 49 may add a fourth kind. The requirement is not that this page knows it -
+ * it cannot - but that it says so instead of guessing.                       */
+const unknown = crossings.run(() => [
+  { date: "2030-07-01", kind: "trajectory_shift", metric: "kg", value: 74,
+    direction: "down", previous_value: 75.1, previous_date: "2030-06-20" },
+]);
+const unknownText = unknown.map(m => strip(m.text)).join(" ");
+const unknownLine = strip(chron(unknown[0].text)[0]);
+
+ok("unknown kind: the row does not vanish",
+   unknownLine.includes("2030-07-01"), unknownLine);
+ok("unknown kind: the row is named by its own kind",
+   unknownText.includes("trajectory_shift"), unknownText.slice(0, 200));
+ok("unknown kind: it is not claimed as a personal first",
+   !unknownLine.includes("beating") && !/\b(low|high) of\b/.test(unknownLine),
+   unknownLine);
+ok("unknown kind: it is not claimed as a boundary crossing",
+   !/\b(below|above)\b/.test(unknownLine), unknownLine);
+ok("unknown kind: the refusal says what it is refusing to do",
+   /no sentence for this kind/.test(unknownLine), unknownLine);
+/* Loud, not buried: a second message so a reader scanning the page sees the
+ * client fell behind rather than finding one odd line in a list of 26. */
+ok("unknown kind: raises a separate message rather than only a list line",
+   unknown.length === 2 && unknown[1].tone === "watch",
+   `${unknown.length} messages, tones ${unknown.map(m => m.tone).join(",")}`);
+/* The engine's known kinds must NOT trip the refusal, or the control is a
+ * tripwire across the doorway. */
+ok("unknown kind: the three known kinds never trip it",
+   !/no sentence for this kind/.test(everyKindText)
+   && everyKind.length === 1,
+   `${everyKind.length} messages`);
 
 /* ---- no message is empty or unterminated ------------------------------- */
 for (const m of messages) {
