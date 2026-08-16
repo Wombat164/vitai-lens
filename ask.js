@@ -70,7 +70,9 @@ const Ask = (() => {
     calorie: "kcal_in", calories: "kcal_in", kcal: "kcal_in", eat: "kcal_in",
     eating: "kcal_in", ate: "kcal_in", intake: "kcal_in",
     protein: "protein_g",
-    rhr: "rhr", "resting": "rhr", pulse: "rhr",
+    // `pulse` is deliberately absent: it is ambiguous in this record and is
+    // refused rather than mapped. See AMBIGUOUS_METRIC below.
+    rhr: "rhr", "resting": "rhr",
     active: "active_min", minutes: "active_min",
     heart: "avg_hr", hr: "avg_hr", bpm: "avg_hr",
   };
@@ -179,6 +181,55 @@ const Ask = (() => {
     "from (my|the) (watch|scale|app|phone|tracker)|" +
     "came from the (scale|watch|app)|unknown origin|no origin|" +
     "which (device|source)|what (device|source))\\b");
+
+  /* A WORD THAT NAMES TWO MEASURES NAMES NEITHER.
+   *
+   * Found by this client's own audit: the engine publishes `pulse` as an alias
+   * for `avg_hr`, and this client mapped it to `rhr`. Two clients answering
+   * "what was my pulse" returned different metrics and neither said it had
+   * chosen. That is the failure this repo exists to catch, and the resolution
+   * is not to pick the other one.
+   *
+   * NEITHER MAPPING IS DEFENSIBLE AS AN ANSWER, and the record says so rather
+   * than this comment asserting it:
+   *
+   *   `avg_hr` is a session average - heart rate while training, which is not
+   *   what a person means by their pulse.
+   *
+   *   `rhr` is worse, because it looks right. The record carries a
+   *   `capabilities` row declaring `rhr` a PROXY whose construct is "a daytime
+   *   spot statistic, not the nightly minimum" (contract 44). And the rhr rows
+   *   in this record name no `origin` at all, so no capability statement can
+   *   be joined to them - which by the engine's own rule resolves to
+   *   competence `unknown` rather than to a default.
+   *
+   * So the honest answer names both and picks neither. Refused before scoring,
+   * like `comparison` and `streak`, because NO intent can honour a slot that
+   * cannot be filled: the ambiguity is in the question, not in the answerer.
+   *
+   * A disambiguator removes it. "Resting pulse" is not ambiguous and still
+   * answers, which is the control that stops this becoming a word ban. */
+  const AMBIGUOUS_METRIC = {
+    pulse: {
+      disambiguators: /\b(resting|rest|overnight|nightly|session|training|workout|during|average|avg)\b/,
+      candidates: [
+        ["rhr", "the daily resting heart rate, which this record declares a " +
+               "proxy for a daytime spot statistic rather than the nightly low"],
+        ["avg_hr", "the average heart rate during a session, which is a " +
+                   "training figure rather than a resting one"],
+      ],
+    },
+  };
+
+  function ambiguousMetric(q) {
+    for (const word of Object.keys(AMBIGUOUS_METRIC)) {
+      const spec = AMBIGUOUS_METRIC[word];
+      if (!new RegExp("\\b" + word + "\\b").test(q)) continue;
+      if (spec.disambiguators.test(q)) continue;
+      return { word, candidates: spec.candidates };
+    }
+    return null;
+  }
 
   function qualifiers(q) {
     const out = { window: null, superlative: null, comparison: false,
@@ -1050,7 +1101,7 @@ const Ask = (() => {
    * tool's own instruction failed. */
   const DAILY_METRIC = {
     sleep_h: { words: ["sleep", "slept", "sleeping"], unit: "h", dp: 1, label: "sleep" },
-    rhr: { words: ["resting", "rhr", "pulse"], unit: "bpm", dp: 0, label: "resting heart rate" },
+    rhr: { words: ["resting", "rhr"], unit: "bpm", dp: 0, label: "resting heart rate" },
     mood: { words: ["mood", "happy", "happiness"], unit: null, dp: 0, label: "mood" },
     pain: { words: ["pain", "sore", "hurts"], unit: null, dp: 0, label: "pain" },
     steps: { words: ["step", "steps"], unit: "steps", dp: 0, label: "steps" },
@@ -1786,6 +1837,27 @@ const Ask = (() => {
             "than the engine's. Counting each group is a different question " +
             "and one this page can answer - ask for the count and name the " +
             "group, and you will get both figures without a verdict attached.",
+        sql: null,
+        matched: null,
+      };
+    }
+    /* Ambiguous metric word, refused here for the same reason as the two
+     * below: no intent can honour it, so which one would have won is
+     * irrelevant and scoring first would give the reader a true but useless
+     * reason. */
+    const amb = ambiguousMetric(q);
+    if (amb) {
+      return {
+        kind: "refusal",
+        refusal: "ambiguous-metric",
+        text: `<em>${esc(amb.word)}</em> names two different measures in this ` +
+              `record, and nothing in the question chooses between them: ` +
+              N.listify(amb.candidates.map(
+                ([f, why]) => `<code>${esc(f)}</code>, ${why}`)) + `. ` +
+              `Picking one and answering confidently is the shape of mistake ` +
+              `this page exists to avoid, so it is not picking. Ask for the ` +
+              `resting heart rate or the session average by name and either ` +
+              `will answer.`,
         sql: null,
         matched: null,
       };
