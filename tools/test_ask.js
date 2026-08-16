@@ -52,6 +52,7 @@ const CANONICAL = {
   verdicts: "how did the weeks score",
   extremum: "what is my longest run",
   "daily-metric": "how did i sleep",
+  "session-hr": "what was my heart rate",
   checks: "did i pass the hop test",
   injuries: "what injuries do i have",
   "plan-changes": "did i change my plan and why",
@@ -216,6 +217,43 @@ for (const q of QUALIFIED) {
      a("whats my rhr").matched === "daily-metric");
   ok("CONTROL: an unrelated daily metric is untouched",
      a("how did I sleep").matched === "daily-metric");
+
+  /* THE REFUSAL'S PROMISE MUST BE TRUE.
+   *
+   * It tells the reader to ask for the resting heart rate or the session
+   * average by name. The resting side already worked; the session average
+   * answered nothing at all, because `avg_hr` lives on a session and
+   * `daily-metric` covers the daily columns. A refusal that sends the reader
+   * somewhere empty is worse than a terse one.
+   *
+   * Two things had to change: `avg_hr` needed an answer, and "average heart
+   * rate" had to stop reading as a request to compute an average. The engine's
+   * column is literally `avg_hr`, so asking for it by name was being refused
+   * with the arithmetic boilerplate - the same word-with-two-meanings defect
+   * as `mean` and `most recent`. */
+  for (const q of ["whats my average heart rate", "what is my average hr",
+                   "what was my avg hr", "what was my heart rate"]) {
+    ok(`the promise holds: "${q}"`, a(q).matched === "session-hr",
+       `${a(q).kind} ${a(q).matched || ""}`);
+  }
+  ok("the session answer says what it is the average OF",
+     /during a session/i.test(strip(a("what was my heart rate").text)),
+     strip(a("what was my heart rate").text).slice(0, 110));
+  ok("and points at the resting measure as a different one",
+     /resting/i.test(strip(a("what was my heart rate").text)));
+
+  /* CONTROLS. Narrowing the aggregate guard must not open it: only
+   * average/avg bound to the heart-rate noun is a column name. */
+  ok("CONTROL: an average of a distance is still arithmetic and refuses",
+     a("what is my average distance").kind === "refusal");
+  ok("CONTROL: an average weight is still arithmetic and refuses",
+     a("whats my average weight").kind === "refusal");
+  ok("CONTROL: a real mean still refuses",
+     a("whats the mean of my weight").kind === "refusal");
+  /* And the session answer must not outrank a question about disagreement,
+   * which merely mentions the metric. */
+  ok("CONTROL: a conflicts question still reaches conflicts",
+     a("did any sources disagree about my heart rate").matched === "conflicts");
 }
 
 /* ---- keyword misfires, and the controls that prove the rule survived ----
