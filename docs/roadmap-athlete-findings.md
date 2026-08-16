@@ -139,8 +139,21 @@ in the 539 columns of populated tables.
 `justifications`, `measurements`, `plans`, `protocols`, `regimes`,
 `retractions`, `sets`, `thresholds`.
 
-Not acted on, per the item. Recorded so the next person builds on a denominator
-that is true.
+Recorded so the next person builds on a denominator that is true.
+
+**One of the twenty is now read: `capabilities`.** It was taken first because
+it is the only one on the list that QUALIFIES other numbers rather than
+reporting its own, and because this client's own audit of the word `pulse`
+turned on one of its rows - a statement that decides a question about the
+record belongs where a reader can see it. It is stated and never applied: a
+capability is keyed on `origin`, the rows it would qualify here name none, and
+inventing that join is exactly what the engine's `unknown` rule forbids.
+
+**The other nineteen stay open, and not as a sweep.** Each wants the same
+question asked of it: does this table qualify or contradict something already
+on the page, or is it only absent? A table that merely has no surface is a
+blank space, and RULES.md is explicit that blank spaces are the roadmap rather
+than a backlog to burn down.
 
 ## Status
 
