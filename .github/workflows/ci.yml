@@ -36,6 +36,8 @@ jobs:
         run: node tools/test_narrator.js
       - name: ask tests (grounding, refusal, no SQL from user text)
         run: node tools/test_ask.js
+      - name: contract 51's absence pair renders as itself
+        run: node tools/test_absence.js
       - name: the brief renders
         run: node tools/narrate.js
 
@@ -110,6 +112,7 @@ jobs:
         run: |
           node tools/test_ask.js
           node tools/test_narrator.js
+          node tools/test_absence.js
           node tools/narrate.js
 
   syntax:

@@ -148,6 +148,9 @@
      but LEGIBLY: the point is that the reader can see the record said nothing,
      not that the cell looks empty. */
   .absent { color: var(--ink-mut); font-style: italic; font-size: 12px; }
+  /* A STATED absence is not the same as an unexplained one, and the difference
+     must survive greyscale, so it is an underline and not only a colour. */
+  .absent-why { text-decoration: underline dotted; text-underline-offset: 3px; }
   /* An ordinal-only quantity: the engine vouches for the ordering, not the
      magnitude. Marked in the cell rather than in a footnote, because a reader
      who has to remember a footnote will read the number as exact.
@@ -1096,7 +1099,52 @@ function tableView(db) {
 // confident-looking subset and gave no sign it was doing so. A client that
 // will not start is a bug report. A client that renders sixty per cent of the
 // truth and looks complete is a lie with a chart on it.
-const BUILT_AGAINST_CONTRACT = "50";
+const BUILT_AGAINST_CONTRACT = "53";
+
+/* WHY AN ABSENCE IS ABSENT (contract 51), which this client used to flatten.
+ *
+ * RULES.md: "'Nothing recorded', 'computed and declined', and 'not applicable'
+ * are three different statements and must read as three different things", and
+ * "a client that collapses every reason into one grey square has thrown away
+ * the distinction the engine paid for."
+ *
+ * Until contract 51 an observation row could not say WHY a value was missing,
+ * so one string was the whole truth. Now it can, and one string is a lie by
+ * omission: "nobody measured it" and "the athlete was asked and declined" are
+ * different facts with opposite consequences for a reader.
+ *
+ * THIS IS PRESENTATION, NOT DERIVATION. Mapping a closed engine vocabulary to
+ * English is the same act as rendering a verdict word; it invents nothing and
+ * two honest clients would agree on every mapping. The lens may not compute,
+ * and this does not.
+ */
+const ABSENT_REASON_WORDS = {
+  "not-performed": "not measured",
+  "unable-to-obtain": "attempted, nothing came back",
+  "error": "measured, and rejected",
+  "asked-declined": "asked, and preferred not to say",
+  "asked-unknown": "asked, and does not know",
+  "not-applicable": "does not apply here",
+};
+
+/* The reason this row gives for THIS field being absent, or null.
+ *
+ * `absent_fields` scopes the reason: contract 51 deliberately made it two
+ * fields rather than one parsed string, so a reason cannot float free of the
+ * value it explains. A reason that names other fields does not explain this
+ * cell and must not be borrowed for it.
+ */
+function absentReasonFor(row, col) {
+  const reason = row && row.absent_reason;
+  if (!reason) return null;
+  const named = String(row.absent_fields || "")
+    .split(",").map((f) => f.trim()).filter(Boolean);
+  if (!named.includes(col)) return null;
+  /* AN UNRECOGNISED REASON RENDERS ITSELF rather than falling back to the
+   * generic phrase. A vocabulary this client has not been taught is exactly
+   * the case where flattening would hide that the engine learnt something. */
+  return ABSENT_REASON_WORDS[reason] || reason;
+}
 
 function dbContract(db) {
   try {
@@ -1433,7 +1481,12 @@ function tableOf(rs) {
     for (const c of cols) {
       const td = tr.insertCell();
       if (r[c] === null || r[c] === undefined) {
-        td.innerHTML = '<span class="absent">not recorded</span>';
+        const why = absentReasonFor(r, c);
+        const span = document.createElement("span");
+        span.className = why ? "absent absent-why" : "absent";
+        span.textContent = why || "not recorded";
+        if (why) span.title = "the record says why this is missing";
+        td.appendChild(span);
       } else {
         td.textContent = String(r[c]);
       }
