@@ -57,6 +57,34 @@ features - here it IS the feature.
   green. The canary had been red three consecutive mornings (13th, 14th, 15th)
   against an engine that moved on the 12th, which is what prompted this
   section existing at all.
+- **Follow 54** - DONE 2026-08-18. Pin moved 53 to 54, demo rebuilt, all four
+  suites green with nothing else changed, and the reason it was nothing else
+  is the part worth keeping.
+
+  Contract 54 adds `supersedes_device` beside `supersedes_seq`: which MACHINE
+  wrote the row at the position a correction names. It exists because `seq` is
+  stamped from the union the appending machine can SEE, so two devices offline
+  together stamp the same position and a written correction stops meaning one
+  thing. The migration note says nothing is required of a consumer that only
+  READS, and that is this client.
+
+  Checked rather than taken on trust: the read model this client consumes has
+  no `supersedes` column on any observation table and no corrections surface
+  at all - superseded rows are resolved away at build time, and the lens's own
+  "has anything been corrected" answer reads `claims.merged_into`, which is
+  dedup and a different question. So there is no field to render and none to
+  assert on.
+
+  The one reader-visible change in 54 is that a CONTESTED position now refuses
+  rather than retiring whichever row sorted last. That refusal happens inside
+  the build; nothing in the emitted read model says it happened. If the engine
+  ever surfaces it, this client should say it rather than showing the row as
+  uncorrected - the same shape as the absence case on the same day, where
+  rendering a stated absence as blank would have passed every check.
+
+  The canary filed this one itself (issue #21), which is the alarm added
+  earlier the same day working on real drift rather than on a branch broken to
+  test it.
 - **Render `crossings`** - DONE 2026-08-16 (contract 47), and the `band` kind
   plus an unknown-kind refusal followed at 48. Round-number, personal-first and
   band milestones read from the weight series, goal-independent - so unlike
