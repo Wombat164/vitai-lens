@@ -30,30 +30,25 @@ function ok(name, cond, detail) {
   console.log(`FAIL  ${name}${detail ? "\n      " + detail : ""}`);
 }
 
-/* The two functions under test, lifted from index.html.
+/* The two functions under test, REQUIRED rather than reimplemented.
  *
- * The lens is a single file served statically with no build step, so there is
- * nothing to import. Keeping these in step with the page is a real cost and it
- * is the reason the last test below exists: it reads index.html and fails if
- * the vocabulary here has drifted from the vocabulary there.
+ * This file used to carry its own copy of both, "lifted from index.html",
+ * with a test further down that read the page and failed if the two had
+ * drifted. That was guarding a real risk: the page and this file could
+ * disagree and every job would stay green. But a copy checked for drift is a
+ * weaker arrangement than no copy, and it had the specific weakness that these
+ * tests exercised the copy - so they proved things about code the page does
+ * not run.
+ *
+ * Both now live in `ask.js`, which the page loads above its own script and
+ * reads them from. These tests exercise the real ones. What survives of the
+ * old drift check is the half that still means something: that the page has
+ * not gone back to declaring its own.
  */
-const ABSENT_REASON_WORDS = {
-  "not-performed": "not measured",
-  "unable-to-obtain": "attempted, nothing came back",
-  "error": "measured, and rejected",
-  "asked-declined": "asked, and preferred not to say",
-  "asked-unknown": "asked, and does not know",
-  "not-applicable": "does not apply here",
-};
-
-function absentReasonFor(row, col) {
-  const reason = row && row.absent_reason;
-  if (!reason) return null;
-  const named = String(row.absent_fields || "")
-    .split(",").map((f) => f.trim()).filter(Boolean);
-  if (!named.includes(col)) return null;
-  return ABSENT_REASON_WORDS[reason] || reason;
-}
+global.Narrator = require("../narrator.js");
+const Ask = require("../ask.js");
+const ABSENT_REASON_WORDS = Ask.ABSENT_REASON_WORDS;
+const absentReasonFor = Ask.absentReasonFor;
 
 /* ---- the distinction the engine paid for ------------------------------- */
 
@@ -92,42 +87,101 @@ ok("AN UNRECOGNISED REASON RENDERS ITSELF",
    absentReasonFor({ absent_fields: "kg", absent_reason: "some-future-code" },
                    "kg") === "some-future-code");
 
-/* ---- the copy stays in step with the page ------------------------------ */
+/* ---- the page has not grown its own copy back --------------------------- */
 
 const fs = require("fs");
 const path = require("path");
 const page = fs.readFileSync(
   path.join(__dirname, "..", "index.html"), "utf8");
 
-ok("the page declares the same vocabulary this file tests",
-   Object.keys(ABSENT_REASON_WORDS).every((k) => page.includes(`"${k}"`))
-     && Object.values(ABSENT_REASON_WORDS).every((v) => page.includes(v)),
-   "index.html and this test have drifted apart");
+/* WHAT IS LEFT TO CHECK, now that there is one definition. Not that two copies
+ * agree - there is only one - but that the page still READS it. A future edit
+ * that pastes the vocabulary back into index.html would restore the drift this
+ * change removed, and it would do so silently, because every assertion above
+ * would still pass against `ask.js`. */
+ok("the page reads the vocabulary rather than declaring one",
+   page.includes("Ask.ABSENT_REASON_WORDS")
+     && page.includes("Ask.absentReasonFor")
+     && !/const ABSENT_REASON_WORDS = \{/.test(page),
+   "index.html declares its own copy again");
 
-ok("the page scopes the reason to named fields",
-   page.includes("absent_fields") && page.includes("named.includes(col)"),
-   "the scoping guard is missing from the page");
-
-/* ---- and the honest statement about the fixture ------------------------ */
+/* ---- and now the fixture answers back ----------------------------------
+ *
+ * This block used to print a note saying the engine's demo carried ZERO rows
+ * with a stated absence, so nothing above was exercised end to end and this
+ * client could render the feature wrongly with every job green. It was filed
+ * against the engine's demo corpus and it LANDED: vitai #427 put every
+ * published code into the artifact clients read, and #430 gave the demo its
+ * first stated absences.
+ *
+ * So the note becomes assertions, which is what it asked for. What they check
+ * is deliberately not "the demo has N rows" - that would break every time the
+ * corpus grows, which is the lesson `test_ask.js` already carries in its own
+ * comment. They check PROPERTIES: that the feature is exercised at all, that
+ * every code the demo actually uses is one this client can say, and that a
+ * reason found in the record scopes to the field it names.
+ */
 
 const { DatabaseSync } = require("node:sqlite");
 const DB = path.join(__dirname, "..", "demo", "health.db");
-let stated = 0;
+const TABLES = ["weight", "daily", "sessions"];
+
+let db = null;
 try {
-  const db = new DatabaseSync(DB, { readOnly: true });
-  for (const t of ["weight", "daily", "sessions"]) {
-    stated += db.prepare(
-      `select count(*) c from ${t} where absent_reason is not null`).get().c;
-  }
+  db = new DatabaseSync(DB, { readOnly: true });
 } catch (e) {
-  console.log(`note  could not read the demo: ${e.message}`);
+  ok("the demo can be read", false, e.message);
 }
-console.log(
-  `note  the demo carries ${stated} row(s) with a stated absence. ` +
-  (stated === 0
-    ? "ZERO means nothing above is exercised end to end, and this client "
-      + "could render the feature wrongly with every job green. Filed "
-      + "against the engine's demo corpus."
-    : "The demo now exercises this; assert on it here and delete this note."));
+
+if (db) {
+  const rows = [];
+  for (const t of TABLES) {
+    for (const r of db.prepare(
+      `select absent_fields, absent_reason from ${t} ` +
+      "where absent_reason is not null").all()) rows.push({ table: t, ...r });
+  }
+
+  /* THE FIXTURE MUST EXERCISE THE FEATURE. Zero is the state that made every
+   * assertion above theatre, and it is the one worth failing on rather than
+   * noting: a client whose absence handling is only ever tested against rows
+   * it invented itself has not been tested against the engine. */
+  ok("the demo carries stated absences at all",
+     rows.length > 0,
+     "zero rows with an absent_reason: nothing above is exercised end to end, "
+     + "and this client could render the feature wrongly with every job green");
+
+  /* Not "all six codes appear" - which code an engine chooses to demonstrate
+   * is the engine's business, and asserting the set here would make this file
+   * fail when vitai edits its corpus for reasons of its own. What must hold is
+   * that whatever it DOES use, this client has words for. */
+  const unknown = [...new Set(rows.map((r) => r.absent_reason))]
+    .filter((code) => !(code in ABSENT_REASON_WORDS));
+  ok("every reason the demo uses is one this client can say",
+     unknown.length === 0,
+     unknown.length
+       ? `the engine emits ${unknown.join(", ")} and this client has no words `
+         + "for it, so it renders as its own code - correct behaviour, and a "
+         + "sign the vocabulary is behind the engine"
+       : "");
+
+  /* The scoping property, checked against real rows rather than composed
+   * ones. Every row in the record that states a reason must render it for a
+   * field it names, and must not render it for one it does not. */
+  const leaked = rows.filter((r) => {
+    const named = String(r.absent_fields || "").split(",")
+      .map((f) => f.trim()).filter(Boolean);
+    if (!named.length) return true;
+    const rendersNamed = named.every((f) => absentReasonFor(r, f) !== null);
+    return !rendersNamed || absentReasonFor(r, "a_field_no_row_names") !== null;
+  });
+  ok("every stated absence in the record scopes to the fields it names",
+     leaked.length === 0,
+     leaked.length ? JSON.stringify(leaked[0]) : "");
+
+  console.log(`note  ${rows.length} stated absence(s) across `
+              + `${TABLES.join(", ")}, using `
+              + `${new Set(rows.map((r) => r.absent_reason)).size} of `
+              + `${Object.keys(ABSENT_REASON_WORDS).length} known reasons.`);
+}
 
 process.exit(failed ? 1 : 0);

@@ -56,6 +56,48 @@ const Ask = (() => {
   // date matched by regex - never with raw question text.
   const sqlStr = (v) => "'" + String(v).replace(/'/g, "''") + "'";
 
+  /* ---- why a value is absent (contract 51) ------------------------------
+   *
+   * ONE DEFINITION, AND IT LIVES HERE. These words were declared twice: once
+   * in `index.html` for the table, once in `tools/test_absence.js` "lifted
+   * from index.html", with a test that read the page and failed if the two had
+   * drifted. That test was doing real work, because the copies were a live
+   * risk - but checking that two copies agree is a weaker thing than having
+   * one. The page loads this file before its own script, so it can read them
+   * from here, and the test can exercise the function the page actually calls
+   * instead of a reimplementation of it.
+   *
+   * RULES.md is why the vocabulary exists at all: "nothing recorded",
+   * "computed and declined" and "not applicable" are three different
+   * statements and must read as three different things. A client that renders
+   * them as one grey square has thrown away the distinction the engine paid
+   * for, and would pass every pin check while doing it. */
+  const ABSENT_REASON_WORDS = {
+    "not-performed": "not measured",
+    "unable-to-obtain": "attempted, nothing came back",
+    "error": "measured, and rejected",
+    "asked-declined": "asked, and preferred not to say",
+    "asked-unknown": "asked, and does not know",
+    "not-applicable": "does not apply here",
+  };
+
+  /* The reason this row gives for THIS field being absent, or null.
+   *
+   * SCOPED TO THE NAMED FIELDS. `absent_reason` is one reason for the fields
+   * `absent_fields` lists, so a row saying kcal was declined must not make an
+   * unrelated empty column look declined too. An unrecognised code renders
+   * ITSELF rather than a guess: a code this client has not been taught is
+   * still the engine's word, and inventing a friendly phrase for it would be
+   * this client claiming to understand something it does not. */
+  const absentReasonFor = (row, col) => {
+    const reason = row && row.absent_reason;
+    if (!reason) return null;
+    const named = String(row.absent_fields || "")
+      .split(",").map((f) => f.trim()).filter(Boolean);
+    if (!named.includes(col)) return null;
+    return ABSENT_REASON_WORDS[reason] || reason;
+  };
+
   /* ---- the lexicon ------------------------------------------------------
    * Words to schema. Kept as data rather than buried in regexes so that what
    * this thing understands is a list somebody can read and extend, and so the
@@ -566,11 +608,63 @@ const Ask = (() => {
        * vocabulary comes from the RECORD rather than a list here, so a record
        * with different sources is askable about its own. */
       if (/\bhow many\b/.test(q)) {
-        const total = query("SELECT COUNT(*) AS n FROM weight")[0];
+        /* A WEIGH-IN IS A ROW WITH A READING, and this counted rows.
+         *
+         * Until contract 51 those were the same thing: an observation row
+         * existed because a value had been observed. Now a row can state that
+         * a measurement did NOT happen and why, and the engine's demo carries
+         * four of them for weight - two `not-performed`, one `error`, one
+         * `unable-to-obtain`. Counting rows turned "62 weigh-ins" into "66",
+         * four of which nobody stood on a scale for, and put two of them in
+         * the "no origin recorded" bucket, which reads as "we weighed and did
+         * not write down how" when the truth is that we did not weigh.
+         *
+         * This is the failure mode RULES.md names and the one this repo
+         * exists to catch: the pin check passed, every other job was green,
+         * and the client was quietly wrong about what the record says. The
+         * three tests that caught it were already scoped to `kg IS NOT NULL`
+         * and were right.
+         *
+         * FILTERING THEM OUT IS ONLY HALF THE FIX. A count that silently drops
+         * the absences renders them as nothing, which throws away the same
+         * distinction from the other side. So they are counted separately and
+         * said out loud, in their own words. */
+        const HAS_READING = "WHERE kg IS NOT NULL";
+        const total = query(`SELECT COUNT(*) AS n FROM weight ${HAS_READING}`)[0];
         const byOrigin = query(
-          "SELECT origin, COUNT(*) AS n FROM weight GROUP BY origin ORDER BY n DESC");
-        const cite = ["SELECT COUNT(*) AS n FROM weight",
-                      "SELECT origin, COUNT(*) AS n FROM weight GROUP BY origin ORDER BY n DESC"];
+          `SELECT origin, COUNT(*) AS n FROM weight ${HAS_READING} ` +
+          "GROUP BY origin ORDER BY n DESC");
+        const stated = query(
+          "SELECT absent_reason AS reason, COUNT(*) AS n FROM weight " +
+          "WHERE kg IS NULL AND absent_reason IS NOT NULL " +
+          "GROUP BY absent_reason ORDER BY n DESC");
+        const cite = [`SELECT COUNT(*) AS n FROM weight ${HAS_READING}`,
+                      `SELECT origin, COUNT(*) AS n FROM weight ${HAS_READING} ` +
+                      "GROUP BY origin ORDER BY n DESC"];
+
+        /* The absences, in the engine's own vocabulary rather than as a
+         * footnote saying "some days are missing". An unrecognised code comes
+         * through as itself, for the reason `absentReasonFor` gives. */
+        const absences = () => {
+          if (!stated.length) return "";
+          const n = stated.reduce((a, r) => a + r.n, 0);
+          cite.push("SELECT absent_reason, COUNT(*) AS n FROM weight " +
+                    "WHERE kg IS NULL AND absent_reason IS NOT NULL " +
+                    "GROUP BY absent_reason");
+          /* THE CODE AND THE GLOSS, not the gloss alone. Two of the six
+           * phrases contain a comma - "measured, and rejected" - so a list of
+           * them alone runs its items together and a reader cannot tell where
+           * one ends. Leading with the engine's own code fixes that and is the
+           * more honest rendering for a conformance client anyway: it shows
+           * what the record said and what this client made of it, so a wrong
+           * gloss is visible rather than authoritative. */
+          return ` ${cap(N.derCount(n))} further ` +
+            `${N.plural(n, "day", "days")} say why there is no reading ` +
+            `instead of carrying one: ` +
+            N.listify(stated.map(r => `${N.der(r.n)} <code>${esc(r.reason)}</code>` +
+              ` (${esc(ABSENT_REASON_WORDS[r.reason] || r.reason)})`)) +
+            `. Those are not weigh-ins and are not counted above.`;
+        };
 
         /* "unknown origin" is a question about the NULLs, and it is the one a
          * sceptic asks first. Answering it with the total would be the same
@@ -580,7 +674,8 @@ const Ask = (() => {
           return {
             text: `${N.derCount(none ? none.n : 0)} of ${N.der(total.n)} ` +
                   `weigh-ins name no origin at all. The value is real; its ` +
-                  `custody is not written down, and those are different facts.`,
+                  `custody is not written down, and those are different ` +
+                  `facts.` + absences(),
             sql: cite,
           };
         }
@@ -604,7 +699,7 @@ const Ask = (() => {
                   : `${N.der(r.n)} with none recorded`)) +
                 `. I can count them because counting rows is a property of the ` +
                 `query; the origins are the engine's own words, not a grouping ` +
-                `made here.`,
+                `made here.` + absences(),
           sql: cite,
         };
       }
@@ -2090,7 +2185,8 @@ const Ask = (() => {
              text: cap(out.text) };
   }
 
-  return { answer, INTENTS, _internal: { slots, norm, horizon, matchGoal } };
+  return { answer, INTENTS, ABSENT_REASON_WORDS, absentReasonFor,
+           _internal: { slots, norm, horizon, matchGoal } };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = Ask;
