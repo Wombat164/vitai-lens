@@ -186,3 +186,68 @@ jobs:
               print("\n".join(bad)); sys.exit(1)
           print("ascii clean")
           PY
+
+  alarm:
+    # SOMETHING HAS TO READ THE CANARY.
+    #
+    # The schedule above fixed half of this: the job now sings when nobody is
+    # in the room. On 2026-08-18 it sang at 07:03, went red because this client
+    # was counting stated absences as weigh-ins, and NOTHING RECORDED IT. Issue
+    # #17 had already named the shape - "the alarm rings into nothing. A signal
+    # nobody reads is not a signal" - and it was still true, because the fix
+    # for it had been to run the check more often rather than to route its
+    # result anywhere.
+    #
+    # So a red conformance run files an issue. This repo's whole justification
+    # for loadline's pinned freedom is that drift is noticed HERE, and an issue
+    # is the only artefact in this estate that survives nobody looking.
+    #
+    # NOT ON PULL REQUESTS. There the author is already looking at the red
+    # check, and an issue per pushed branch is noise that would train everyone
+    # to ignore the label.
+    #
+    # ONE ISSUE, REOPENED RATHER THAN MULTIPLIED. A new issue per failing day
+    # would bury the first one, which is the one carrying the diagnosis. It
+    # comments on the existing issue only for SCHEDULED runs, which bounds it
+    # at one comment a day and makes the comment thread a record of how long
+    # the canary has been red.
+    needs: [conformance]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: file or update the drift alarm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          TITLE="Canary red: the engine moved and this client has not followed"
+          BODY="The conformance job failed on a \`$EVENT\` run.
+
+          That job checks this client out against the engine's DEFAULT BRANCH,
+          unpinned, rebuilds the demo through the real engine and runs the
+          suites against it. Red here means one of two things, and the run log
+          says which:
+
+          - the pin no longer matches the contract the engine emits, so read
+            the engine's migration note before raising it; or
+          - the pin matches and a suite failed, which means the engine changed
+            something this client renders and the rendering is now wrong.
+
+          The second kind is the one that passes every other job. Do not close
+          this by rebuilding the committed demo.
+
+          Run: $RUN_URL"
+          EXISTING=$(gh issue list --state open --limit 100 \
+            --json number,title --jq \
+            ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -z "$EXISTING" ]; then
+            gh issue create --title "$TITLE" --body "$BODY"
+          elif [ "$EVENT" = "schedule" ]; then
+            gh issue comment "$EXISTING" --body "Still red. $BODY"
+          else
+            echo "alarm #$EXISTING is already open; not commenting on a $EVENT run"
+          fi
