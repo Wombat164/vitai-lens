@@ -1118,33 +1118,23 @@ const BUILT_AGAINST_CONTRACT = "53";
  * two honest clients would agree on every mapping. The lens may not compute,
  * and this does not.
  */
-const ABSENT_REASON_WORDS = {
-  "not-performed": "not measured",
-  "unable-to-obtain": "attempted, nothing came back",
-  "error": "measured, and rejected",
-  "asked-declined": "asked, and preferred not to say",
-  "asked-unknown": "asked, and does not know",
-  "not-applicable": "does not apply here",
-};
-
-/* The reason this row gives for THIS field being absent, or null.
+/* BOTH NOW COME FROM `ask.js`, which this page loads above its own script.
  *
- * `absent_fields` scopes the reason: contract 51 deliberately made it two
- * fields rather than one parsed string, so a reason cannot float free of the
- * value it explains. A reason that names other fields does not explain this
- * cell and must not be borrowed for it.
+ * They were declared here and again in `tools/test_absence.js` "lifted from
+ * index.html", with a test that read this file and failed if the two had
+ * drifted apart. That test was guarding a real risk. Having ONE definition is
+ * a stronger thing than checking that two agree, and it lets that test
+ * exercise the function this page actually calls instead of a copy of it.
+ *
+ * The two properties that matter travel with the definition and are tested
+ * there: `absent_fields` SCOPES the reason, because contract 51 deliberately
+ * made it two fields rather than one parsed string so a reason cannot float
+ * free of the value it explains; and an unrecognised code RENDERS ITSELF
+ * rather than falling back to a generic phrase, since that is exactly the case
+ * where flattening would hide that the engine learnt something.
  */
-function absentReasonFor(row, col) {
-  const reason = row && row.absent_reason;
-  if (!reason) return null;
-  const named = String(row.absent_fields || "")
-    .split(",").map((f) => f.trim()).filter(Boolean);
-  if (!named.includes(col)) return null;
-  /* AN UNRECOGNISED REASON RENDERS ITSELF rather than falling back to the
-   * generic phrase. A vocabulary this client has not been taught is exactly
-   * the case where flattening would hide that the engine learnt something. */
-  return ABSENT_REASON_WORDS[reason] || reason;
-}
+const ABSENT_REASON_WORDS = Ask.ABSENT_REASON_WORDS;
+const absentReasonFor = Ask.absentReasonFor;
 
 function dbContract(db) {
   try {

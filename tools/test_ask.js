@@ -366,6 +366,28 @@ for (const q of QUALIFIED) {
      new RegExp(`${wTotal} weigh-ins, by origin`).test(
        t("how many weigh ins are there")),
      t("how many weigh ins are there").slice(0, 70));
+  /* AND THE OTHER HALF OF THE SAME DEFECT.
+   *
+   * The three tests above failed because the count included rows that state
+   * WHY there is no reading - contract 51 absences - so "62 weigh-ins" had
+   * become "66", four of which nobody stood on a scale for. Scoping the count
+   * to `kg IS NOT NULL` fixes that and, alone, introduces the opposite error:
+   * the absences vanish, and a client that renders them as nothing has thrown
+   * away the distinction the engine paid for just as surely as one that counts
+   * them as readings.
+   *
+   * So the count must SAY them. Read from the fixture and skipped when the
+   * fixture has none, because this file must not start failing if vitai edits
+   * its corpus - the trap the comment above already names. */
+  const wAbsent = query("SELECT COUNT(*) n FROM weight " +
+    "WHERE kg IS NULL AND absent_reason IS NOT NULL")[0].n;
+  ok("a stated absence is neither counted as a weigh-in nor dropped",
+     wAbsent === 0 || (/not weigh-ins and are not counted above/.test(
+       t("how many weigh ins are there"))
+       && new RegExp(`${wTotal} weigh-ins`).test(
+            t("how many weigh ins are there"))),
+     t("how many weigh ins are there").slice(-90));
+
   ok("CONTROL: the default is still the latest reading",
      /last weigh-in is/.test(t("what do they weigh")));
   ok("CONTROL: it still refuses to say up or down",
